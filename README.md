@@ -149,6 +149,7 @@ Danach Credential-JSON und `config.yml` nach `./cloudflared/` legen.
 | `SITE_LINK_URL` / `SITE_LINK_LABEL` | Link zurück zur Hauptseite |
 | `SITE_LOGO_URL` | Bild im Kopfbalken, z. B. `/static/logo.jpg`. Leer = kein Logo |
 | `SITE_FAVICON_URL` | Icon in der Tableiste. Leer = das Logo wird genommen |
+| `SITE_ALSO_URL` / `SITE_ALSO_LABEL` | Link in der Fußzeile auf einen zweiten Weg zum Mitlesen, etwa die Kanalansicht einer Mesh-Karte |
 | `SITE_NOTE` | Zusatz in der Fußzeile, etwa der Standort des Observers |
 | `THEME` | Dateiname ohne `.css` aus `app/static/themes/`. Mitgeliefert: `plain`, `kf` |
 | `RETENTION_DAYS` | Vorgabe 30, `0` = nie löschen |

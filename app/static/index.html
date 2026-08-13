@@ -35,6 +35,7 @@
 <footer>
   <div class="wrap">
     <p id="footer-source"></p>
+    <p id="footer-also" hidden></p>
     <p id="footer-note"></p>
   </div>
 </footer>
@@ -79,6 +80,19 @@ function setupHeader() {
         ? `Mitgehört vom Observer ${observers[0]}. Nur was dieser Node empfängt, erscheint hier — außerhalb seiner Reichweite gefunkte Nachrichten fehlen.`
         : `Mitgehört von ${observers.length} Observern: ${observers.join(", ")}. Nur was diese Nodes empfangen, erscheint hier — außerhalb ihrer Reichweite gefunkte Nachrichten fehlen.`)
     : "Noch kein Observer hat etwas gemeldet.";
+
+  // Zweiter Weg zum Mitlesen. Wer hier eine Lücke sieht, findet die Nachricht
+  // vielleicht dort — andere Observer, andere Reichweite.
+  if (CONFIG.alsoUrl) {
+    const also = $("footer-also");
+    also.textContent = "Dieselben Kanäle lassen sich auch hier mitlesen: ";
+    const link = document.createElement("a");
+    link.href = CONFIG.alsoUrl;
+    link.textContent = CONFIG.alsoLabel || CONFIG.alsoUrl;
+    link.rel = "noopener";
+    also.appendChild(link);
+    also.hidden = false;
+  }
 
   const parts = [];
   if (CONFIG.retentionDays > 0) parts.push(`${CONFIG.retentionDays} Tage Historie`);

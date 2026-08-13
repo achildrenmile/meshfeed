@@ -93,6 +93,8 @@ class Settings:
     site_link_label: str = ""
     site_logo_url: str = ""
     site_favicon_url: str = ""
+    site_also_url: str = ""
+    site_also_label: str = ""
     site_note: str = ""
     theme: str = "plain"
 
@@ -145,6 +147,8 @@ class Settings:
             # zu pflegen, und in der Tableiste steht dasselbe Zeichen wie oben
             # auf der Seite.
             site_favicon_url=get("SITE_FAVICON_URL") or get("SITE_LOGO_URL"),
+            site_also_url=get("SITE_ALSO_URL"),
+            site_also_label=get("SITE_ALSO_LABEL"),
             site_note=get("SITE_NOTE"),
             theme=resolve_theme(get("THEME")),
             channels=channels,

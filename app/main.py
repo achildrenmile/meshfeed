@@ -130,6 +130,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             "pageSize": settings.page_size,
             "channels": _channel_payload(),
             "observers": store.observers(),
+            "alsoUrl": settings.site_also_url,
+            "alsoLabel": settings.site_also_label,
             "note": settings.site_note,
         }, ensure_ascii=False)
         if settings.site_favicon_url:
