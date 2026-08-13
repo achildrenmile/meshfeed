@@ -132,6 +132,13 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             "observers": store.observers(),
             "note": settings.site_note,
         }, ensure_ascii=False)
+        if settings.site_favicon_url:
+            html = html.replace("__MESHFEED_FAVICON__", settings.site_favicon_url)
+        else:
+            # Ohne Bild die Zeilen ganz weglassen — ein leeres href laedt sonst
+            # die Seite selbst als Icon.
+            html = "\n".join(line for line in html.splitlines()
+                             if "__MESHFEED_FAVICON__" not in line)
         return HTMLResponse(
             html.replace("__MESHFEED_THEME__", settings.theme)
                 .replace("__MESHFEED_CONFIG__", config)

@@ -29,6 +29,7 @@ services:
       SITE_LINK_URL: ${SITE_LINK_URL:-}
       SITE_LINK_LABEL: ${SITE_LINK_LABEL:-}
       SITE_LOGO_URL: ${SITE_LOGO_URL:-}
+      SITE_FAVICON_URL: ${SITE_FAVICON_URL:-}
       SITE_NOTE: ${SITE_NOTE:-}
       # --- Betrieb ---
       RETENTION_DAYS: ${RETENTION_DAYS:-30}

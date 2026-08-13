@@ -92,6 +92,7 @@ class Settings:
     site_link_url: str = ""
     site_link_label: str = ""
     site_logo_url: str = ""
+    site_favicon_url: str = ""
     site_note: str = ""
     theme: str = "plain"
 
@@ -140,6 +141,10 @@ class Settings:
             site_link_url=get("SITE_LINK_URL"),
             site_link_label=get("SITE_LINK_LABEL"),
             site_logo_url=get("SITE_LOGO_URL"),
+            # Ohne eigene Angabe dient das Logo als Favicon — ein Bild weniger
+            # zu pflegen, und in der Tableiste steht dasselbe Zeichen wie oben
+            # auf der Seite.
+            site_favicon_url=get("SITE_FAVICON_URL") or get("SITE_LOGO_URL"),
             site_note=get("SITE_NOTE"),
             theme=resolve_theme(get("THEME")),
             channels=channels,

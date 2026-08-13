@@ -198,6 +198,14 @@ def test_settings_require_broker_and_channels():
         Settings.from_env({"MQTT_HOST": "broker"})
 
 
+def test_favicon_falls_back_to_logo():
+    base = {"MQTT_HOST": "broker", "CHANNELS": "#kf", "SITE_LOGO_URL": "/static/logo.png"}
+    assert Settings.from_env(base).site_favicon_url == "/static/logo.png"
+    assert Settings.from_env({**base, "SITE_FAVICON_URL": "/static/favicon.png"}).site_favicon_url \
+        == "/static/favicon.png"
+    assert Settings.from_env({"MQTT_HOST": "broker", "CHANNELS": "#kf"}).site_favicon_url == ""
+
+
 def test_settings_from_env():
     settings = Settings.from_env({
         "MQTT_HOST": "broker", "MQTT_PORT": "1884", "CHANNELS": "#kf=KF",
