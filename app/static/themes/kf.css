@@ -1,0 +1,24 @@
+/* Kärnten funkt — Farben aus src/styles/global.css des Astro-Auftritts
+   (Oliv #3d4f2f, Sand #f5f5ec, Gold #b8860b). Bewusst nur helles Schema:
+   der Hauptauftritt hat keins fuer dunkel, ein eigenes waere ein Bruch. */
+
+:root {
+  --bg: #ffffff;
+  --bg-alt: #f5f5ec;
+  --card: #ffffff;
+  --ink: #2f3529;
+  --muted: #6b7c5e;
+  --line: #e3e3d5;
+  --accent: #3d4f2f;
+  --accent-ink: #ffffff;
+  --accent-soft: #eef1e6;
+  --live: #556b3e;
+  --bar-bg: #3d4f2f;
+  --bar-ink: #ffffff;
+  --font: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --radius: 6px;
+  --shadow: 0 2px 8px rgba(47, 53, 41, .18);
+}
+
+/* Gold als Akzent auf dem dunklen Balken, wie im Footer des Hauptauftritts. */
+.bar .home { color: #d4a017; opacity: 1; }

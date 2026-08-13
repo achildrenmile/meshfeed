@@ -1,0 +1,65 @@
+name: ${INSTANCE_NAME:-meshfeed}
+
+# Eine Instanz = ein Verzeichnis mit eigener .env, eigenem Volume und eigenem
+# Tunnel. Ein zweiter Feed (etwa fuer einen oeradio-Kanal) ist eine Kopie dieses
+# Verzeichnisses mit anderen Werten in der .env — dasselbe Image, andere Kanaele,
+# andere Domain.
+
+services:
+  app:
+    build: .
+    image: meshfeed:local
+    container_name: ${INSTANCE_NAME:-meshfeed}-app
+    restart: unless-stopped
+    environment:
+      # --- Quelle ---
+      MQTT_HOST: ${MQTT_HOST}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASS: ${MQTT_PASS}
+      MQTT_TOPICS: ${MQTT_TOPICS:-meshcore/+/+/packets}
+      MQTT_CLIENT_ID: ${INSTANCE_NAME:-meshfeed}
+      # --- Kanaele ---
+      CHANNELS: ${CHANNELS}
+      CHANNEL_KEYS: ${CHANNEL_KEYS:-}
+      # --- Anzeige ---
+      THEME: ${THEME:-plain}
+      SITE_TITLE: ${SITE_TITLE:-Mesh-Feed}
+      SITE_TAGLINE: ${SITE_TAGLINE:-}
+      SITE_LINK_URL: ${SITE_LINK_URL:-}
+      SITE_LINK_LABEL: ${SITE_LINK_LABEL:-}
+      SITE_LOGO_URL: ${SITE_LOGO_URL:-}
+      SITE_NOTE: ${SITE_NOTE:-}
+      # --- Betrieb ---
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}
+      DB_PATH: /data/meshfeed.db
+    volumes:
+      - data:/data
+    # Nur an localhost. Nach aussen geht es ausschliesslich durch den Tunnel.
+    ports:
+      - "127.0.0.1:${HOST_PORT:-3430}:8080"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Cloudflare-Tunnel. Eigener Tunnel je Instanz: eigenes Credential, eigene
+  # ingress-Regel, kein Mitziehen fremder Hostnamen.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ${INSTANCE_NAME:-meshfeed}-cloudflared
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - app
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:

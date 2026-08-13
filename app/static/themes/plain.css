@@ -1,0 +1,34 @@
+/* Neutrales Theme. Kein Branding, folgt der Systemeinstellung hell/dunkel.
+   Vorlage fuer eigene Themes: nur Variablen setzen, base.css bleibt wie es ist. */
+
+:root {
+  --bg: #f6f7f9;
+  --bg-alt: #eef0f3;
+  --card: #ffffff;
+  --ink: #16191d;
+  --muted: #656d78;
+  --line: #dfe3e8;
+  --accent: #1d6f5c;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6f2ee;
+  --live: #2f9e44;
+  --bar-bg: #1d2126;
+  --bar-ink: #ffffff;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171a;
+    --bg-alt: #1a1e22;
+    --card: #1c2024;
+    --ink: #e9ecef;
+    --muted: #97a0aa;
+    --line: #2c3238;
+    --accent: #55c2a4;
+    --accent-ink: #10241e;
+    --accent-soft: #1d2a27;
+    --live: #51cf66;
+    --bar-bg: #0f1214;
+  }
+}

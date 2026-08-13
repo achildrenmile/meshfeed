@@ -1,0 +1,8 @@
+.venv/
+.env
+.mqtt_pass
+cloudflared/
+__pycache__/
+*.pyc
+data/
+.pytest_cache/

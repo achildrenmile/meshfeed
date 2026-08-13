@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mesh-Feed</title>
+<link rel="stylesheet" href="/static/base.css">
+<link rel="stylesheet" href="/static/themes/__MESHFEED_THEME__.css">
+</head>
+<body>
+<header class="bar">
+  <div class="wrap">
+    <img id="site-logo" alt="" hidden>
+    <h1 id="site-title">Mesh-Feed</h1>
+    <a id="site-link" class="home" hidden></a>
+  </div>
+</header>
+
+<div class="sub">
+  <div class="wrap">
+    <p class="tagline" id="site-tagline"></p>
+    <nav class="tabs" id="tabs" aria-label="Kanäle"></nav>
+    <div class="status"><span class="dot" id="live-dot"></span><span id="status-text">verbinde …</span></div>
+  </div>
+</div>
+
+<main class="wrap">
+  <ul class="messages" id="messages"></ul>
+  <div class="empty" id="empty" hidden>Noch nichts gehört. Sobald auf dem Kanal gefunkt wird, erscheint es hier von selbst.</div>
+  <div class="more-wrap" hidden id="more-wrap"><button class="more" id="more">Ältere laden</button></div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p id="footer-source"></p>
+    <p id="footer-note"></p>
+  </div>
+</footer>
+
+<script>
+const CONFIG = __MESHFEED_CONFIG__;
+
+const state = {
+  channel: null,          // null = alle Kanäle
+  oldestId: null,
+  rendered: new Map(),    // id -> <li>
+};
+
+const $ = (id) => document.getElementById(id);
+const fmtTime = (unix) => new Date(unix * 1000).toLocaleString("de-AT", {
+  day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+});
+const channelLabel = (slug) => (CONFIG.channels.find((c) => c.slug === slug) || {}).label || slug;
+
+function setupHeader() {
+  document.title = CONFIG.title;
+  $("site-title").textContent = CONFIG.title;
+  $("site-tagline").textContent = CONFIG.tagline || "";
+  if (CONFIG.logoUrl) {
+    const logo = $("site-logo");
+    logo.src = CONFIG.logoUrl;
+    logo.alt = CONFIG.title;
+    logo.hidden = false;
+  }
+  if (CONFIG.linkUrl) {
+    const link = $("site-link");
+    link.href = CONFIG.linkUrl;
+    link.textContent = CONFIG.linkLabel || CONFIG.linkUrl;
+    link.hidden = false;
+  }
+  // Woher die Nachrichten kommen. Wichtig, weil das zugleich die Grenze der
+  // Anzeige ist: Was kein Observer hört, steht hier nicht — das ist keine
+  // Störung, sondern Funk.
+  const observers = CONFIG.observers || [];
+  $("footer-source").textContent = observers.length
+    ? (observers.length === 1
+        ? `Mitgehört vom Observer ${observers[0]}. Nur was dieser Node empfängt, erscheint hier — außerhalb seiner Reichweite gefunkte Nachrichten fehlen.`
+        : `Mitgehört von ${observers.length} Observern: ${observers.join(", ")}. Nur was diese Nodes empfangen, erscheint hier — außerhalb ihrer Reichweite gefunkte Nachrichten fehlen.`)
+    : "Noch kein Observer hat etwas gemeldet.";
+
+  const parts = [];
+  if (CONFIG.retentionDays > 0) parts.push(`${CONFIG.retentionDays} Tage Historie`);
+  parts.push("nur öffentliche Kanäle, keine Direktnachrichten");
+  if (CONFIG.note) parts.push(CONFIG.note);
+  $("footer-note").textContent = parts.join(" · ");
+}
+
+function setupTabs() {
+  const tabs = $("tabs");
+  const entries = CONFIG.channels.length > 1
+    ? [{ slug: null, label: "Alle" }, ...CONFIG.channels]
+    : CONFIG.channels;
+  if (entries.length < 2) return;
+  for (const entry of entries) {
+    const button = document.createElement("button");
+    button.className = "tab";
+    button.textContent = entry.label;
+    button.setAttribute("aria-selected", String(entry.slug === state.channel));
+    button.onclick = () => selectChannel(entry.slug, button);
+    tabs.appendChild(button);
+  }
+}
+
+function selectChannel(slug, button) {
+  state.channel = slug;
+  for (const tab of document.querySelectorAll(".tab")) tab.setAttribute("aria-selected", "false");
+  button.setAttribute("aria-selected", "true");
+  history.replaceState(null, "", slug ? `/c/${slug}` : "/");
+  reload();
+}
+
+function renderMessage(message, fresh) {
+  const li = document.createElement("li");
+  li.className = fresh ? "msg fresh" : "msg";
+  li.dataset.id = message.id;
+
+  const head = document.createElement("div");
+  head.className = "msg-head";
+  const sender = document.createElement("span");
+  sender.className = "sender";
+  sender.textContent = message.sender || "unbekannt";
+  head.appendChild(sender);
+  if (CONFIG.channels.length > 1) {
+    const chan = document.createElement("span");
+    chan.className = "chan";
+    chan.textContent = channelLabel(message.channel);
+    head.appendChild(chan);
+  }
+  const time = document.createElement("time");
+  time.dateTime = new Date(message.received_at * 1000).toISOString();
+  time.textContent = fmtTime(message.received_at);
+  head.appendChild(time);
+
+  const text = document.createElement("div");
+  text.className = "text";
+  text.textContent = message.text;
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  const parts = [];
+  if (message.snr !== null && message.snr !== undefined) parts.push(`SNR ${message.snr} dB`);
+  if (message.rssi !== null && message.rssi !== undefined) parts.push(`RSSI ${message.rssi} dBm`);
+  if (message.hops !== null && message.hops !== undefined) parts.push(`${message.hops} Hops`);
+  if (message.receptions > 1) parts.push(`${message.receptions}× gehört`);
+  for (const part of parts) {
+    const span = document.createElement("span");
+    span.textContent = part;
+    meta.appendChild(span);
+  }
+
+  li.append(head, text, meta);
+  return li;
+}
+
+function insert(message, fresh) {
+  const existing = state.rendered.get(message.id);
+  const li = renderMessage(message, fresh);
+  if (existing) {
+    existing.replaceWith(li);
+  } else {
+    const list = $("messages");
+    const next = [...list.children].find((child) => Number(child.dataset.id) < message.id);
+    next ? list.insertBefore(li, next) : list.appendChild(li);
+  }
+  state.rendered.set(message.id, li);
+  $("empty").hidden = state.rendered.size > 0;
+}
+
+async function load(before) {
+  const params = new URLSearchParams();
+  if (state.channel) params.set("channel", state.channel);
+  if (before) params.set("before", before);
+  const response = await fetch(`/api/messages?${params}`);
+  const data = await response.json();
+  for (const message of data.messages) {
+    insert(message, false);
+    state.oldestId = state.oldestId ? Math.min(state.oldestId, message.id) : message.id;
+  }
+  $("more-wrap").hidden = data.messages.length < CONFIG.pageSize;
+  $("empty").hidden = state.rendered.size > 0;
+}
+
+function reload() {
+  $("messages").innerHTML = "";
+  state.rendered.clear();
+  state.oldestId = null;
+  load(null);
+}
+
+function connectStream() {
+  const source = new EventSource("/api/stream");
+  source.onopen = () => {
+    $("live-dot").classList.add("live");
+    $("status-text").textContent = "live";
+  };
+  source.onerror = () => {
+    $("live-dot").classList.remove("live");
+    $("status-text").textContent = "verbinde neu …";   // EventSource versucht es selbst wieder
+  };
+  source.onmessage = (event) => {
+    const { message } = JSON.parse(event.data);
+    if (state.channel && message.channel !== state.channel) return;
+    insert(message, true);
+  };
+}
+
+setupHeader();
+const slugFromPath = location.pathname.startsWith("/c/") ? location.pathname.slice(3) : null;
+state.channel = CONFIG.channels.some((c) => c.slug === slugFromPath) ? slugFromPath
+  : (CONFIG.channels.length === 1 ? CONFIG.channels[0].slug : null);
+setupTabs();
+$("more").onclick = () => load(state.oldestId);
+load(null);
+connectStream();
+</script>
+</body>
+</html>
