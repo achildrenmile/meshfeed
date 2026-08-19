@@ -12,7 +12,7 @@
 <body>
 <header class="bar">
   <div class="wrap">
-    <img id="site-logo" alt="" hidden>
+    <a id="site-logo-link" hidden><img id="site-logo" alt="" hidden></a>
     <h1 id="site-title">Mesh-Feed</h1>
     <a id="site-link" class="home" hidden></a>
   </div>
@@ -63,8 +63,15 @@ function setupHeader() {
   if (CONFIG.logoUrl) {
     const logo = $("site-logo");
     logo.src = CONFIG.logoUrl;
-    logo.alt = CONFIG.title;
+    logo.alt = CONFIG.title || "";
     logo.hidden = false;
+    // Das Logo fuehrt zurueck zum Hauptauftritt, wie ueberall sonst auch.
+    if (CONFIG.linkUrl) {
+      const wrap = $("site-logo-link");
+      wrap.href = CONFIG.linkUrl;
+      wrap.rel = "noopener";
+      wrap.hidden = false;
+    }
   }
   if (CONFIG.linkUrl) {
     const link = $("site-link");
