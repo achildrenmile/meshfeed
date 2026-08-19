@@ -38,9 +38,11 @@ services:
       DB_PATH: /data/meshfeed.db
     volumes:
       - data:/data
-    # Nur an localhost. Nach aussen geht es ausschliesslich durch den Tunnel.
+    # Vorgabe ist localhost: nach aussen geht es ausschliesslich durch den
+    # Tunnel. BIND_ADDR loest die Bindung nur, wenn der Tunnel auf einem
+    # anderen Host laeuft — dann liegt der Weg dorthin offen im LAN.
     ports:
-      - "127.0.0.1:${HOST_PORT:-3430}:8080"
+      - "${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-3430}:8080"
     logging:
       driver: json-file
       options:

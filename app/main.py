@@ -177,6 +177,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             "alsoUrl": settings.site_also_url,
             "alsoLabel": settings.site_also_label,
             "note": settings.site_note,
+            "imprintUrl": settings.site_imprint_url,
+            "imprintLabel": settings.site_imprint_label,
         }, ensure_ascii=False)
         if settings.site_favicon_url:
             html = html.replace("__MESHFEED_FAVICON__", settings.site_favicon_url)

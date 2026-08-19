@@ -37,6 +37,7 @@
     <p id="footer-source"></p>
     <p id="footer-also" hidden></p>
     <p id="footer-note"></p>
+    <p id="footer-imprint" hidden></p>
   </div>
 </footer>
 
@@ -83,6 +84,16 @@ function setupHeader() {
 
   // Zweiter Weg zum Mitlesen. Wer hier eine Lücke sieht, findet die Nachricht
   // vielleicht dort — andere Observer, andere Reichweite.
+  if (CONFIG.imprintUrl) {
+    const imp = $("footer-imprint");
+    const link = document.createElement("a");
+    link.href = CONFIG.imprintUrl;
+    link.rel = "noopener";
+    link.textContent = CONFIG.imprintLabel || "Impressum";
+    imp.appendChild(link);
+    imp.hidden = false;
+  }
+
   if (CONFIG.alsoUrl) {
     const also = $("footer-also");
     also.textContent = "Dieselben Kanäle lassen sich auch hier mitlesen: ";

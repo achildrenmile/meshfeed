@@ -96,6 +96,10 @@ class Settings:
     site_also_url: str = ""
     site_also_label: str = ""
     site_note: str = ""
+    # Pflichtangabe, sobald der Feed oeffentlich erreichbar ist. Verweist
+    # in der Regel auf das Impressum des Hauptauftritts.
+    site_imprint_url: str = ""
+    site_imprint_label: str = ""
     theme: str = "plain"
 
     # --- Betrieb ---
@@ -150,6 +154,8 @@ class Settings:
             site_also_url=get("SITE_ALSO_URL"),
             site_also_label=get("SITE_ALSO_LABEL"),
             site_note=get("SITE_NOTE"),
+            site_imprint_url=get("SITE_IMPRINT_URL"),
+            site_imprint_label=get("SITE_IMPRINT_LABEL"),
             theme=resolve_theme(get("THEME")),
             channels=channels,
             db_path=get("DB_PATH") or "/data/meshfeed.db",
