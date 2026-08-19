@@ -7,6 +7,7 @@ laeuft ueber meshinfra und bleibt dort.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
@@ -111,6 +112,22 @@ class Broadcaster:
                 self._queues.discard(queue)
 
 
+
+def _asset_version(theme: str) -> str:
+    """Kurzes Kennzeichen ueber den Inhalt von Stilvorlage und Seitengeruest.
+
+    Haengt als ?v= an den Verweisen. Ohne das liefert ein vorgelagerter Cache
+    nach einer Aenderung stundenlang die alte Datei weiter -- die Seite sieht
+    dann kaputt aus, obwohl der Ursprung laengst das Neue hat. Aendert sich
+    nichts, bleibt das Kennzeichen gleich und der Cache greift wie gewuenscht.
+    """
+    roh = b""
+    for name in ("base.css", f"themes/{theme}.css", "index.html"):
+        pfad = STATIC_DIR / name
+        if pfad.is_file():
+            roh += pfad.read_bytes()
+    return hashlib.sha256(roh).hexdigest()[:10]
+
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or Settings.from_env()
     store = Store(settings.db_path)
@@ -189,6 +206,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                              if "__MESHFEED_FAVICON__" not in line)
         return HTMLResponse(
             html.replace("__MESHFEED_THEME__", settings.theme)
+                .replace("__MESHFEED_VERSION__", _asset_version(settings.theme))
                 .replace("__MESHFEED_CONFIG__", config)
         )
 
