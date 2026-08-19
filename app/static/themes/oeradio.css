@@ -28,10 +28,17 @@
 /* Auf dem dunklen Balken traegt das kraeftige Gruen, nicht das dunkle. */
 .bar .home { color: #4ade80; opacity: 1; }
 
-/* Die Wortmarke ist breit. Die Vorgabe schneidet Logos rund auf 40x40 --
-   das wuerde sie zerhacken. Volle Breite, nichts abgeschnitten. */
-.bar img { width: auto; border-radius: 0; object-fit: contain; }
+/* Die Wortmarke ist breit und soll lesbar sein. Die Vorgabe schneidet Logos
+   rund auf 40x40 -- das zerhackt sie und macht sie winzig. Auf oeradio.at ist
+   sie 210 px breit, hier entsprechend gross, und der Balken waechst mit. */
+.bar img { height: 72px; width: auto; border-radius: 0; object-fit: contain; }
+.bar .wrap { min-height: 96px; }
 #site-logo-link { display: inline-flex; align-items: center; }
+
+@media (max-width: 640px) {
+  .bar img { height: 52px; }
+  .bar .wrap { min-height: 72px; }
+}
 
 /* Der Fuss ist bei oeradio.at derselbe dunkle Grund wie der Kopf, mit
    gedaempftem Gruen als Schrift -- nicht die helle Variante der Vorgabe. */
