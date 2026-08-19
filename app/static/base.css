@@ -78,6 +78,33 @@ li.msg.fresh { animation: pop 1s ease; }
 .text { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .meta { margin-top: 6px; font-size: .75rem; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
 
+/* --- Wege durchs Netz --- */
+
+.paths { margin-top: 8px; font-size: .75rem; }
+.paths > summary {
+  cursor: pointer; color: var(--muted); list-style: none;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.paths > summary::-webkit-details-marker { display: none; }
+.paths > summary::before { content: "›"; transition: transform .15s; display: inline-block; }
+.paths[open] > summary::before { transform: rotate(90deg); }
+.paths > summary:hover { color: var(--accent); }
+.path {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin-top: 6px; padding-left: 14px;
+}
+.path-observer { color: var(--muted); }
+.path-observer::after { content: ":"; }
+.path-sep { color: var(--muted); }
+.hop {
+  background: var(--accent-soft); color: var(--ink);
+  border-radius: var(--radius-pill); padding: 1px 8px;
+}
+/* Unbekannt und mehrdeutig sind sichtbar andere Zustaende als ein sicherer
+   Name — sonst liest sich eine Vermutung wie eine Tatsache. */
+.hop-unknown { background: transparent; border: 1px dashed var(--line); color: var(--muted); font-family: ui-monospace, monospace; }
+.hop-ambiguous { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+
 .empty, .more-wrap { text-align: center; color: var(--muted); padding: 26px 0; }
 button.more {
   border: 1px solid var(--line); background: var(--card); color: var(--ink);

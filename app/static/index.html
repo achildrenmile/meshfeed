@@ -165,7 +165,62 @@ function renderMessage(message, fresh) {
   }
 
   li.append(head, text, meta);
+  const paths = renderPaths(message);
+  if (paths) li.appendChild(paths);
   return li;
+}
+
+// Die Wege, die dieselbe Nachricht genommen hat — je Empfang einer. Eingeklappt,
+// damit der Feed ruhig bleibt; wer es wissen will, klappt auf.
+// Namen stammen aus Adverts, also aus der Luft: ausschliesslich textContent,
+// niemals innerHTML.
+function renderPaths(message) {
+  const heard = (message.heard || []).filter((entry) => entry.path && entry.path.length);
+  if (!heard.length) return null;
+
+  const details = document.createElement("details");
+  details.className = "paths";
+  const summary = document.createElement("summary");
+  summary.textContent = heard.length === 1 ? "Weg durchs Netz" : `${heard.length} Wege durchs Netz`;
+  details.appendChild(summary);
+
+  for (const entry of heard) {
+    const row = document.createElement("div");
+    row.className = "path";
+
+    if (entry.observer) {
+      const obs = document.createElement("span");
+      obs.className = "path-observer";
+      obs.textContent = entry.observer;
+      row.appendChild(obs);
+    }
+
+    entry.path.forEach((hop, index) => {
+      if (index > 0) {
+        const sep = document.createElement("span");
+        sep.className = "path-sep";
+        sep.textContent = "›";
+        row.appendChild(sep);
+      }
+      const span = document.createElement("span");
+      if (!hop.names.length) {
+        span.className = "hop hop-unknown";
+        span.textContent = hop.prefix;
+        span.title = "Zu diesem Knoten haben wir noch kein Advert gehört";
+      } else if (hop.names.length === 1) {
+        span.className = "hop";
+        span.textContent = hop.names[0];
+      } else {
+        span.className = "hop hop-ambiguous";
+        span.textContent = hop.names.join(" oder ");
+        span.title = `Mehrere bekannte Knoten beginnen mit ${hop.prefix}`;
+      }
+      row.appendChild(span);
+    });
+
+    details.appendChild(row);
+  }
+  return details;
 }
 
 function insert(message, fresh) {

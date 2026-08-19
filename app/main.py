@@ -29,6 +29,45 @@ STATIC_DIR = Path(__file__).parent / "static"
 PURGE_INTERVAL_SECONDS = 3600
 
 
+def attach_paths(store: Store, messages: list[StoredMessage]) -> list[dict]:
+    """Nachrichten als dicts, jede um ihre einzelnen Empfaenge ergaenzt.
+
+    Ein Pfadeintrag im Paket nennt nur ein Praefix des Public Key. Aufgeloest
+    wird erst hier und nicht beim Speichern: so bekommt auch ein Weg von gestern
+    seinen Namen, sobald das zugehoerige Advert hereinkommt.
+    """
+    payload = [message.as_dict() for message in messages]
+    by_id = {item["id"]: item for item in payload}
+    for item in payload:
+        item["heard"] = []
+    if not by_id:
+        return payload
+
+    receptions = store.receptions_for(list(by_id))
+    prefixes = {
+        hop.lower()
+        for entries in receptions.values()
+        for entry in entries
+        for hop in (entry["path"] or [])
+    }
+    known = store.resolve_prefixes(prefixes)
+
+    for message_id, entries in receptions.items():
+        target = by_id.get(message_id)
+        if target is None:
+            continue
+        for entry in entries:
+            hops = [
+                {
+                    "prefix": hop.lower(),
+                    "names": [c["name"] for c in known.get(hop.lower(), []) if c["name"]],
+                }
+                for hop in (entry["path"] or [])
+            ]
+            target["heard"].append({**entry, "path": hops})
+    return payload
+
+
 class Broadcaster:
     """Verteilt neue Nachrichten an alle offenen SSE-Verbindungen.
 
@@ -36,9 +75,10 @@ class Broadcaster:
     dem Eventloop — deshalb geht alles ueber ``call_soon_threadsafe``.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, store: Optional[Store] = None) -> None:
         self._queues: set[asyncio.Queue[str]] = set()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._store = store
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -54,7 +94,11 @@ class Broadcaster:
     def publish(self, message: StoredMessage, is_new: bool) -> None:
         if self._loop is None:
             return
-        payload = json.dumps({"new": is_new, "message": message.as_dict()}, ensure_ascii=False)
+        if self._store is not None:
+            body = attach_paths(self._store, [message])[0]
+        else:
+            body = message.as_dict()
+        payload = json.dumps({"new": is_new, "message": body}, ensure_ascii=False)
         self._loop.call_soon_threadsafe(self._fanout, payload)
 
     def _fanout(self, payload: str) -> None:
@@ -70,7 +114,7 @@ class Broadcaster:
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or Settings.from_env()
     store = Store(settings.db_path)
-    broadcaster = Broadcaster()
+    broadcaster = Broadcaster(store)
     collector = Collector(settings, store, on_message=broadcaster.publish)
 
     @asynccontextmanager
@@ -165,7 +209,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         if channel and settings.channels.by_slug(channel) is None:
             raise HTTPException(status_code=404, detail="Kanal nicht konfiguriert")
         rows = store.recent(channel=channel, limit=limit or settings.page_size, before_id=before)
-        return JSONResponse({"messages": [row.as_dict() for row in rows]})
+        return JSONResponse({"messages": attach_paths(store, rows)})
 
     @app.get("/api/status")
     async def api_status() -> JSONResponse:
@@ -173,6 +217,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             "connected": collector.connected.is_set(),
             "packets_seen": collector.packets_seen,
             "messages_decoded": collector.messages_decoded,
+            "adverts_seen": collector.adverts_seen,
+            "known_nodes": store.known_nodes(),
             "last_error": collector.last_error,
             "channels": _channel_payload(),
             "observers": store.observers(),

@@ -17,6 +17,8 @@ Erste Instanz: **#kf** im CarinthiaMesh, erreichbar unter
 - hängt lesend am MQTT-Broker eines Observer-Stacks
 - entschlüsselt GRP_TXT-Pakete der konfigurierten Kanäle
 - fasst Mehrfachempfänge derselben Nachricht zu einer Zeile zusammen
+- zeigt zu jedem Empfang **den Weg, den das Paket genommen hat**, mit Namen
+  statt Hex, soweit bekannt (siehe unten)
 - hält eine Historie (Vorgabe 30 Tage) und liefert Live-Updates per SSE
 
 In der Fußzeile steht, **von welchen Observern** mitgehört wird. Die Namen kommen
@@ -34,6 +36,35 @@ ein Fehler, sondern meist schlicht Funk.
   deshalb ausschließlich am Broker, nie am Node
 - **keine Direktnachrichten.** DMs sind zwischen zwei Nodes ECDH-verschlüsselt
   und für einen Mithörer nicht lesbar. Nur Kanäle mit bekanntem Schlüssel
+
+### Wege durchs Netz
+
+Jedes geflutete Paket trägt den Weg mit, den es genommen hat: eine Liste von
+Repeatern. Genannt wird darin aber nicht der ganze Public Key, sondern nur
+dessen **erste ein bis zwei Bytes** — und beides kommt in denselben Daten vor,
+je nach Firmware des weiterreichenden Repeaters.
+
+Die Namen dazu stammen aus **Adverts**, die ohnehin über dieselbe MQTT-Verbindung
+hereinkommen. Der Observer dekodiert sie bereits samt Signaturprüfung; meshfeed
+übernimmt Public Key, Name und Modus in eine Tabelle `nodes` und löst die
+Präfixe erst beim Ausliefern auf. Das ist Absicht: Ein Advert, das heute abend
+eintrifft, benennt damit rückwirkend auch die Wege von gestern.
+
+Bei einem Byte gibt es nur 256 mögliche Werte, Doppelbelegungen sind also normal.
+Deshalb wird nichts geraten:
+
+- **genau ein Treffer** — der Name steht da
+- **mehrere Treffer, davon genau ein Repeater** — weitergereicht wird nur von
+  Repeatern, damit ist es entschieden
+- **mehrere Repeater** — es stehen alle Kandidaten da, mit „oder" verbunden
+- **kein Treffer** — das Präfix bleibt als Hex stehen. Heißt nur: zu diesem
+  Knoten haben wir noch kein Advert gehört
+
+Weil sich die Wege der Mehrfachempfänge gerade unterscheiden, liegt jeder Empfang
+einzeln in der Tabelle `receptions`. Die Zeile in `messages` bleibt daneben die
+verdichtete Sicht (bester SNR, kürzester Weg). In `/api/messages` steht das unter
+`heard`. Nachrichten von vor dieser Änderung haben keine Wege — dort wurde nur
+die Anzahl der Hops gespeichert, nicht der Weg selbst.
 
 ## 2. Architektur
 

@@ -42,6 +42,7 @@ class Collector:
         self.connected = threading.Event()
         self.packets_seen = 0
         self.messages_decoded = 0
+        self.adverts_seen = 0
         self.last_error: Optional[str] = None
 
         self._client = mqtt.Client(
@@ -100,7 +101,19 @@ class Collector:
     def ingest(self, payload: bytes | str) -> Optional[StoredMessage]:
         """Ein Observer-Paket verarbeiten. Rueckgabe nur bei Kanalnachrichten."""
         data = json.loads(payload)
-        if data.get("type") != "PACKET" or data.get("packet_type") != "5":
+        if data.get("type") != "PACKET":
+            return None
+
+        decoded = data.get("decoded") or {}
+
+        # Adverts tragen Namen und Public Key der Knoten. Sie laufen ohnehin
+        # ueber dieselbe Verbindung; mitgeschrieben werden sie, damit die
+        # Pfad-Praefixe in den Nachrichten spaeter Namen bekommen.
+        if data.get("packet_type") == "4":
+            self._record_advert(decoded)
+            return None
+
+        if data.get("packet_type") != "5":
             return None
 
         raw_hex = data.get("raw")
@@ -108,7 +121,6 @@ class Collector:
             return None
         self.packets_seen += 1
 
-        decoded = data.get("decoded") or {}
         path = decoded.get("path")
         if path is None and data.get("path"):
             path = str(data["path"]).split(",")
@@ -128,7 +140,30 @@ class Collector:
             snr=_as_float(data.get("SNR")),
             rssi=_as_float(data.get("RSSI")),
             observer=data.get("origin"),
+            path=path,
         )
         if self.on_message:
             self.on_message(stored, is_new)
         return stored
+
+    def _record_advert(self, decoded: dict) -> None:
+        """Knoten aus einem Advert vermerken.
+
+        Der Observer dekodiert Adverts bereits selbst, inklusive Signaturpruefung
+        (``advert_parse_ok``). Ohne dieses Gutzeichen wird nichts uebernommen —
+        ein halb gelesenes Advert soll keinen falschen Namen in die Tabelle
+        schreiben.
+        """
+        if not decoded.get("advert_parse_ok"):
+            return
+        pubkey = decoded.get("public_key")
+        if not isinstance(pubkey, str) or len(pubkey) < 8:
+            return
+        seen = decoded.get("advert_time")
+        self.store.record_node(
+            pubkey=pubkey,
+            name=(decoded.get("name") or "").strip() or None,
+            mode=decoded.get("mode"),
+            seen_at=int(seen) if isinstance(seen, (int, float)) else None,
+        )
+        self.adverts_seen += 1
