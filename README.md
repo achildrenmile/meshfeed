@@ -236,11 +236,41 @@ Wichtig sind vier Werte: `INSTANCE_NAME` (sonst kollidieren Containernamen),
 | `GET /api/channels` | konfigurierte Kanäle mit Anzahl und letztem Empfang |
 | `GET /api/messages?channel=&limit=&before=` | Nachrichten, neueste zuerst |
 | `GET /api/stream` | Server-Sent Events, jede neue Nachricht sofort |
-| `GET /api/status` | Broker-Verbindung, Zähler, letzter Fehler |
+| `GET /api/status` | Broker-Verbindung, Zähler, letzter Fehler, Stille seit |
 | `GET /healthz` | Healthcheck |
+| `GET /healthz/quelle` | 200 solange etwas hereinkommt, sonst **503** |
 
 `/healthz` prüft **nicht** den Funkverkehr. Ein ruhiges Netz ist kein Fehler,
 und ein kurzer Broker-Ausfall soll den Container nicht neu starten.
+
+### `/healthz/quelle` — läuft, aber fließt auch etwas?
+
+Der teuerste Fehler ist nicht der, bei dem etwas umfällt, sondern der, bei dem
+alles grün bleibt und trotzdem nichts ankommt. Am 28.08.2026 kam die
+Observer-Bridge nach einem Stromausfall **vor** ihrem Broker hoch, strich ihn
+aus der Zielliste und verband sich nie wieder. Der Feed blieb dabei `healthy`,
+MQTT verbunden, Topic abonniert — nur kam nichts mehr. Gemerkt hat es 35
+Stunden lang niemand.
+
+Deshalb ein zweiter Endpunkt. Er misst, wann zuletzt **irgendein** Paket über
+MQTT hereinkam, vor jedem Filter:
+
+```json
+{"ok": true, "mqtt": true, "still_seit_s": 12, "grenze_s": 1800,
+ "letztes_paket": 1787998844, "pakete_gesamt": 41273}
+```
+
+Zwei Entscheidungen dahinter:
+
+- **Nicht die letzte Kanalnachricht.** Auf `#kf` vergeht auch mal ein Tag, das
+  ist normal. Der Observer dagegen hört dauernd etwas, Adverts allein schon
+  alle paar Minuten. Stille *hier* heißt: Leitung tot, nicht Netz ruhig.
+- **Getrennt von `/healthz`.** An `/healthz` hängt der Docker-Healthcheck. Ein
+  Neustart des Feeds würde nichts heilen — die Ursache liegt eine Etage höher.
+  Dieser Endpunkt ist für einen Monitor gedacht, der Bescheid sagt, nicht für
+  etwas, das von selbst neu startet.
+
+Grenze über `QUELLE_STILL_MINUTEN`, Vorgabe 30.
 
 ## 8. Betrieb
 
@@ -261,6 +291,7 @@ Sichern heißt: Datei kopieren (SQLite, WAL-Modus).
 | verbunden, `packets_seen` bleibt 0 | falsches Topic oder Observer hört nichts | Topic gegen `meshcore/<IATA>/<PUBKEY>/packets` halten, Bridge-Logs des Observers ansehen |
 | `packets_seen` steigt, `messages_decoded` bleibt 0 | Kanal nicht konfiguriert | `CHANNELS` prüfen — nur Kanäle mit passendem Schlüssel werden entschlüsselt |
 | Seite lädt, bleibt aber leer | schlicht kein Verkehr | Zähler in `/api/status` ansehen, Geduld |
+| Seite lädt, alles grün, seit Stunden nichts Neues | Quelle liefert nicht mehr | `curl -s localhost:3430/healthz/quelle`. Bei 503 liegt es nicht am Feed — Bridge auf dem Observer-Host prüfen, `docker logs meshcore-bridge \| grep -oE 'MQTT: [0-9]+/[0-9]+' \| tail -1` |
 | Live-Anzeige springt auf „verbinde neu" | Proxy schneidet die SSE-Verbindung | Tunnel-Logs prüfen; der Browser verbindet selbst neu |
 | Umlaute zerschossen | Nachricht kam so über die Luft | nichts zu tun, MeshCore überträgt UTF-8 |
 
@@ -278,9 +309,13 @@ Sichern heißt: Datei kopieren (SQLite, WAL-Modus).
 ## 11. Tests
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
+python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m pytest tests -q
 ```
+
+`requirements-dev.txt` zieht `requirements.txt` mit und legt `pytest` und
+`httpx` dazu. `httpx` braucht allein der TestClient und kommt deshalb nicht
+ins Image.
 
 Die Kanalpakete in den Tests sind **selbst gebaut**, nicht mitgeschnitten: Ein
 echtes GRP_TXT-Paket eines Hashtag-Kanals kann jeder entschlüsseln — es hier

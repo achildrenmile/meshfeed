@@ -236,10 +236,15 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         return JSONResponse({
             "connected": collector.connected.is_set(),
             "packets_seen": collector.packets_seen,
+            "messages_received": collector.messages_received,
             "messages_decoded": collector.messages_decoded,
             "adverts_seen": collector.adverts_seen,
             "known_nodes": store.known_nodes(),
             "last_error": collector.last_error,
+            "last_packet_at": (
+                int(collector.last_packet_at) if collector.last_packet_at else None
+            ),
+            "quiet_seconds": int(collector.quiet_seconds()),
             "channels": _channel_payload(),
             "observers": store.observers(),
             "server_time": int(time.time()),
@@ -274,6 +279,41 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         # kein Fehler, und ein kurzer Broker-Ausfall soll nicht neu starten.
         store.stats()
         return JSONResponse({"ok": True, "mqtt": collector.connected.is_set()})
+
+    @app.get("/healthz/quelle")
+    async def healthz_quelle() -> JSONResponse:
+        """Kommt ueberhaupt noch etwas herein?
+
+        Getrennt von ``/healthz``, und das mit Absicht: An ``/healthz`` haengt
+        der Docker-Healthcheck, und ein Neustart des Feeds wuerde hier gar
+        nichts heilen. Die Ursache liegt regelmaessig eine Etage hoeher, bei
+        der Bridge auf dem anderen Host. Dieser Endpunkt ist reine Sicht —
+        gedacht fuer einen Monitor, der Bescheid sagt, nicht fuer etwas, das
+        von selbst neu startet.
+
+        Vorgeschichte: Am 28.8.2026 kam die Bridge nach einem Stromausfall vor
+        ihrem Broker hoch, strich ihn aus der Zielliste und verband sich nie
+        wieder. Der Feed blieb dabei ``healthy``, MQTT verbunden, Topic
+        abonniert — nur kam nichts mehr. 35 Stunden lang hat das niemand
+        bemerkt, weil keine einzige Stelle "laeuft, aber es fliesst nichts"
+        abgedeckt hat.
+        """
+        still = collector.quiet_seconds()
+        grenze = settings.quelle_still_minuten * 60
+        ok = still < grenze
+        return JSONResponse(
+            {
+                "ok": ok,
+                "mqtt": collector.connected.is_set(),
+                "still_seit_s": int(still),
+                "grenze_s": grenze,
+                "letztes_paket": (
+                    int(collector.last_packet_at) if collector.last_packet_at else None
+                ),
+                "pakete_gesamt": collector.messages_received,
+            },
+            status_code=200 if ok else 503,
+        )
 
     return app
 

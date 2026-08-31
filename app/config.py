@@ -108,6 +108,9 @@ class Settings:
     retention_days: int = 30
     page_size: int = 100
     port: int = 8080
+    # Ab wie vielen Minuten ohne ein einziges Paket ``/healthz/quelle`` auf
+    # 503 geht. Nicht der Docker-Healthcheck — siehe main.py.
+    quelle_still_minuten: int = 30
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
@@ -162,4 +165,5 @@ class Settings:
             retention_days=get_int("RETENTION_DAYS", 30),
             page_size=get_int("PAGE_SIZE", 100),
             port=get_int("PORT", 8080),
+            quelle_still_minuten=get_int("QUELLE_STILL_MINUTEN", 30),
         )

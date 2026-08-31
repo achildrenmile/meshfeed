@@ -29,16 +29,17 @@
 .bar .home { color: #4ade80; opacity: 1; }
 
 /* Groesse wie auf oeradio.at: dort ist die Wortmarke breitenbasiert gesetzt,
-   210 px auf grossen Schirmen, 105 px auf schmalen (natuerlich 246x164).
+   210 px breit. Hier zwei Drittel davon: der Kopf ist eine Leiste, keine
+   Startseite, und bei voller Groesse drueckt er den Inhalt aus dem Bild.
    Die Vorgabe schneidet Logos rund auf 40x40 -- das zerhackt sie und macht
    sie winzig. Der Balken waechst mit, sonst haengt das Bild heraus. */
-.bar img { width: 210px; height: auto; border-radius: 0; object-fit: contain; }
-.bar .wrap { min-height: 164px; align-items: center; }
+.bar img { width: 110px; height: auto; border-radius: 0; object-fit: contain; }
+.bar .wrap { min-height: 84px; align-items: center; }
 #site-logo-link { display: inline-flex; align-items: center; }
 
 @media (max-width: 640px) {
-  .bar img { width: 105px; }
-  .bar .wrap { min-height: 92px; }
+  .bar img { width: 88px; }
+  .bar .wrap { min-height: 68px; }
 }
 
 /* Der Fuss ist bei oeradio.at derselbe dunkle Grund wie der Kopf, mit
@@ -50,7 +51,9 @@ footer a { color: #4ade80; }
   :root {
     --bg: #0a0f0a;
     --bg-alt: #101810;
-    --card: #101810;
+    /* Eine Stufe heller als Seite und Leiste. Auf demselben Ton verschmelzen
+       die Karten mit der Kanalleiste darueber und dem Fuss darunter. */
+    --card: #182418;
     --ink: #f1f5f9;
     --muted: #7f997f;
     --line: #1d2e1d;
@@ -62,3 +65,23 @@ footer a { color: #4ade80; }
     --shadow: 0 4px 6px -1px rgba(0, 0, 0, .4), 0 2px 4px -2px rgba(0, 0, 0, .3);
   }
 }
+
+/* Kopf und Unterleiste halten sich knapp -- sie tragen nur Logo, Titel,
+   Untertitel und den Live-Punkt. Der Platz gehoert den Nachrichten. */
+.sub .wrap { padding-top: 10px; padding-bottom: 10px; }
+.tagline { margin-bottom: 6px; }
+.status { margin-top: 6px; }
+
+/* Dafuer ein deutlicher Absatz vor der ersten Karte: sonst klebt sie an der
+   Live-Zeile, und die beiden dunklen Flaechen laufen ineinander.
+
+   main.wrap statt main: base.css setzt `.wrap { padding: 0 16px }`, und die
+   Kurzform nullt oben und unten. `.wrap` ist spezifischer als `main`, ein
+   blosses `main { padding: ... }` bleibt deshalb wirkungslos. */
+main.wrap { padding-top: 36px; padding-bottom: 48px; }
+.messages li + li { margin-top: 14px; }
+
+/* Breitere Spalte: 800 px lassen auf einem grossen Schirm viel Leere stehen.
+   margin-inline ausdruecklich, weil .wrap hier direkt im Flex-Koerper haengt
+   und die Kurzform margin: 0 auto dort nicht ueberall zentriert. */
+.wrap { max-width: 1040px; margin-inline: auto; }

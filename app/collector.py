@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from typing import Callable, Optional
 
 import paho.mqtt.client as mqtt
@@ -44,6 +45,20 @@ class Collector:
         self.messages_decoded = 0
         self.adverts_seen = 0
         self.last_error: Optional[str] = None
+
+        # Wann zuletzt ueberhaupt etwas ueber MQTT hereinkam — vor jedem
+        # Filter, unabhaengig von Pakettyp und Kanal.
+        #
+        # Warum nicht die Zeit der letzten Kanalnachricht: Ein ruhiger Kanal
+        # ist normal, auf #kf vergeht auch mal ein Tag. Der Observer dagegen
+        # hoert dauernd etwas, Adverts allein schon alle paar Minuten. Bleibt
+        # es hier still, ist die Leitung tot und nicht das Funknetz.
+        #
+        # Startzeit als Grundlinie, damit ein frisch gestarteter Container
+        # nicht sofort Alarm ausloest, bevor das erste Paket da sein kann.
+        self.started_at = time.time()
+        self.last_packet_at: Optional[float] = None
+        self.messages_received = 0
 
         self._client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
@@ -90,11 +105,23 @@ class Collector:
         logger.warning("MQTT getrennt (%s), paho verbindet selbst wieder", reason_code)
 
     def _handle_message(self, client, userdata, msg: mqtt.MQTTMessage) -> None:
+        # Zuerst der Lebenszeichen-Stempel, dann erst die Verarbeitung: Auch
+        # ein Paket, das gleich verworfen wird oder beim Auspacken kracht,
+        # beweist, dass die Leitung steht.
+        self.last_packet_at = time.time()
+        self.messages_received += 1
         try:
             self.ingest(msg.payload)
         except Exception as exc:  # ein kaputtes Paket darf den Ingest nicht killen
             self.last_error = str(exc)
             logger.exception("Paket nicht verarbeitbar: %s", exc)
+
+    # --- Zustand der Quelle ---------------------------------------------
+
+    def quiet_seconds(self, now: Optional[float] = None) -> float:
+        """Sekunden seit dem letzten Paket, ersatzweise seit dem Start."""
+        now = time.time() if now is None else now
+        return now - (self.last_packet_at or self.started_at)
 
     # --- Verarbeitung ---------------------------------------------------
 

@@ -37,6 +37,9 @@ services:
       SITE_IMPRINT_LABEL: ${SITE_IMPRINT_LABEL:-}
       # --- Betrieb ---
       RETENTION_DAYS: ${RETENTION_DAYS:-30}
+      # Minuten ohne ein einziges Paket, ab denen /healthz/quelle auf 503 geht.
+      # Nicht der Docker-Healthcheck — der haengt an /healthz und bleibt gruen.
+      QUELLE_STILL_MINUTEN: ${QUELLE_STILL_MINUTEN:-30}
       DB_PATH: /data/meshfeed.db
     volumes:
       - data:/data

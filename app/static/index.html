@@ -174,7 +174,7 @@ function renderMessage(message, fresh) {
   const parts = [];
   if (message.snr !== null && message.snr !== undefined) parts.push(`SNR ${message.snr} dB`);
   if (message.rssi !== null && message.rssi !== undefined) parts.push(`RSSI ${message.rssi} dBm`);
-  if (message.hops !== null && message.hops !== undefined) parts.push(`${message.hops} Hops`);
+  if (message.hops !== null && message.hops !== undefined) parts.push(`${message.hops} ${message.hops === 1 ? "Hop" : "Hops"}`);
   if (message.receptions > 1) parts.push(`${message.receptions}× gehört`);
   for (const part of parts) {
     const span = document.createElement("span");

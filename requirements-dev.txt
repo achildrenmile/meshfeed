@@ -1,0 +1,5 @@
+# Nur fuer die Tests. Kommt bewusst NICHT ins Image — httpx braucht allein
+# starlette's TestClient, im Betrieb spricht niemand HTTP nach aussen.
+-r requirements.txt
+pytest==8.4.2
+httpx==0.28.1
