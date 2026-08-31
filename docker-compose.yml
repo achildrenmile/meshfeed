@@ -41,6 +41,18 @@ services:
       # Nicht der Docker-Healthcheck — der haengt an /healthz und bleibt gruen.
       QUELLE_STILL_MINUTEN: ${QUELLE_STILL_MINUTEN:-30}
       DB_PATH: /data/meshfeed.db
+      # --- Discord-Spiegel ---
+      # Leer = aus, und das ist der Normalfall: den Spiegel betreibt eine
+      # eigene Instanz. Webhook-URLs sind Zugangsdaten und stehen
+      # ausschliesslich in der .env, nie hier.
+      DISCORD_WEBHOOKS: ${DISCORD_WEBHOOKS:-}
+      DISCORD_MIN_ABSTAND_S: ${DISCORD_MIN_ABSTAND_S:-2.5}
+      DISCORD_WARTESCHLANGE_MAX: ${DISCORD_WARTESCHLANGE_MAX:-200}
+      DISCORD_TROCKENLAUF: ${DISCORD_TROCKENLAUF:-}
+      DISCORD_START_STILL_S: ${DISCORD_START_STILL_S:-5}
+      DISCORD_FUNKDATEN: ${DISCORD_FUNKDATEN:-true}
+      DISCORD_KNOTEN: ${DISCORD_KNOTEN:-}
+      DISCORD_WARMUP_MIN: ${DISCORD_WARMUP_MIN:-30}
     volumes:
       - data:/data
     # Vorgabe ist localhost: nach aussen geht es ausschliesslich durch den

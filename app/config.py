@@ -44,6 +44,28 @@ def _split_list(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def parse_webhooks(value: str) -> dict[str, str]:
+    """``DISCORD_WEBHOOKS`` lesen: ``at-ktn=https://…,at-ktn-bot=https://…``
+
+    Schluessel ist der **Slug** des Kanals, nicht sein Name — ``#at-ktn-bot``
+    wird zu ``at-ktn-bot``, genau wie in ``_slugify``. Damit steht in der .env
+    dasselbe, was auch in den URLs des Feeds auftaucht.
+
+    Der Sondername ``_knoten`` nimmt die Knotenmeldungen auf und ist deshalb
+    kein Kanal-Slug.
+    """
+    ziele: dict[str, str] = {}
+    for entry in _split_list(value):
+        slug, _, url = entry.partition("=")
+        slug, url = slug.strip(), url.strip()
+        if not url:
+            raise ValueError(f"DISCORD_WEBHOOKS-Eintrag ohne URL: {entry!r}")
+        if not url.startswith("https://"):
+            raise ValueError(f"DISCORD_WEBHOOKS: {slug} ist keine https-URL")
+        ziele[slug if slug.startswith("_") else _slugify(slug)] = url
+    return ziele
+
+
 def parse_channels(channels: str, channel_keys: str = "") -> ChannelSet:
     """Kanaele aus zwei Umgebungsvariablen bauen.
 
@@ -112,6 +134,21 @@ class Settings:
     # 503 geht. Nicht der Docker-Healthcheck — siehe main.py.
     quelle_still_minuten: int = 30
 
+    # --- Discord-Spiegel ---
+    # Leer = aus. Eine Instanz ohne diese Werte verhaelt sich wie vorher, das
+    # ist der Normalfall: den Spiegel betreibt eine eigene Instanz.
+    discord_webhooks: dict[str, str] = field(default_factory=dict)
+    discord_min_abstand_s: float = 2.5
+    discord_warteschlange_max: int = 200
+    discord_trockenlauf: bool = False
+    discord_start_still_s: float = 5.0
+    discord_funkdaten: bool = True
+    # Knotenmeldungen (neuer Knoten, Umbenennung) an das Ziel ``_knoten``.
+    discord_knoten: bool = False
+    # Beim ersten Start ist jeder Knoten neu. Ohne Aufwaermfrist setzt es
+    # sofort drei Dutzend Meldungen — deshalb wird zu Beginn nur gefuellt.
+    discord_warmup_min: int = 30
+
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Settings":
         env = dict(os.environ if env is None else env)
@@ -126,6 +163,10 @@ class Settings:
         def get_bool(key: str, default: bool = False) -> bool:
             raw = get(key).lower()
             return raw in ("1", "true", "yes", "on") if raw else default
+
+        def get_float(key: str, default: float) -> float:
+            raw = get(key)
+            return float(raw) if raw else default
 
         host = get("MQTT_HOST")
         if not host:
@@ -166,4 +207,12 @@ class Settings:
             page_size=get_int("PAGE_SIZE", 100),
             port=get_int("PORT", 8080),
             quelle_still_minuten=get_int("QUELLE_STILL_MINUTEN", 30),
+            discord_webhooks=parse_webhooks(get("DISCORD_WEBHOOKS")),
+            discord_min_abstand_s=get_float("DISCORD_MIN_ABSTAND_S", 2.5),
+            discord_warteschlange_max=get_int("DISCORD_WARTESCHLANGE_MAX", 200),
+            discord_trockenlauf=get_bool("DISCORD_TROCKENLAUF"),
+            discord_start_still_s=get_float("DISCORD_START_STILL_S", 5.0),
+            discord_funkdaten=get_bool("DISCORD_FUNKDATEN", True),
+            discord_knoten=get_bool("DISCORD_KNOTEN"),
+            discord_warmup_min=get_int("DISCORD_WARMUP_MIN", 30),
         )

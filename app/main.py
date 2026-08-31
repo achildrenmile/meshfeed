@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .collector import Collector
 from .config import Settings
+from .discord import DiscordSink
 from .store import StoredMessage, Store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -132,7 +133,50 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or Settings.from_env()
     store = Store(settings.db_path)
     broadcaster = Broadcaster(store)
-    collector = Collector(settings, store, on_message=broadcaster.publish)
+    discord = DiscordSink(
+        settings.discord_webhooks,
+        min_abstand_s=settings.discord_min_abstand_s,
+        warteschlange_max=settings.discord_warteschlange_max,
+        trockenlauf=settings.discord_trockenlauf,
+        start_still_s=settings.discord_start_still_s,
+    )
+    # Aufwaermfrist fuer Knotenmeldungen: beim ersten Start ist jeder Knoten
+    # neu, das waeren drei Dutzend Meldungen am Stueck.
+    knoten_ab = time.monotonic() + settings.discord_warmup_min * 60
+
+    def _an_discord(message, is_new: bool) -> None:
+        """Nur Neues. Jede Wiederholung eines Pakets kaeme sonst noch einmal."""
+        if not is_new or not discord.aktiv:
+            return
+        text = message.text or ""
+        if settings.discord_funkdaten:
+            teile = []
+            if message.hops is not None:
+                teile.append(f"{message.hops} Hops")
+            if message.snr is not None:
+                teile.append(f"SNR {message.snr:.1f} dB")
+            if teile:
+                text = f"{text}\n-# {' · '.join(teile)}"
+        discord.post(message.channel, message.sender, text)
+
+    def _knoten_an_discord(art: str, pubkey: str, name, alter_name) -> None:
+        if not settings.discord_knoten or not discord.aktiv:
+            return
+        if time.monotonic() < knoten_ab:
+            return
+        angezeigt = name or pubkey[:8]
+        if art == "neu":
+            discord.post("_knoten", "Netzwache", f"neuer Knoten **{angezeigt}**")
+        else:
+            discord.post("_knoten", "Netzwache",
+                         f"**{alter_name}** heisst jetzt **{angezeigt}**")
+
+    def _weiterreichen(message, is_new: bool) -> None:
+        broadcaster.publish(message, is_new)
+        _an_discord(message, is_new)
+
+    collector = Collector(settings, store, on_message=_weiterreichen,
+                          on_node=_knoten_an_discord)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -140,6 +184,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         removed = store.purge(settings.retention_days)
         logger.info("Start: %d Kanaele, %d alte Nachrichten entfernt",
                     len(settings.channels), removed)
+        discord.start()
         collector.start()
         purge_task = asyncio.create_task(_purge_loop())
         try:
@@ -147,6 +192,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         finally:
             purge_task.cancel()
             collector.stop()
+            discord.stop()
             store.close()
 
     async def _purge_loop() -> None:
@@ -163,6 +209,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.state.settings = settings
     app.state.store = store
     app.state.collector = collector
+    app.state.discord = discord
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     def _channel_payload() -> list[dict]:
@@ -277,8 +324,31 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     async def healthz() -> JSONResponse:
         # Absichtlich nur der Prozess plus Datenbank. Ein ruhiges Funknetz ist
         # kein Fehler, und ein kurzer Broker-Ausfall soll nicht neu starten.
+        # Der Discord-Spiegel steht bewusst nicht hier — siehe /healthz/discord.
         store.stats()
         return JSONResponse({"ok": True, "mqtt": collector.connected.is_set()})
+
+    @app.get("/healthz/discord")
+    async def healthz_discord() -> JSONResponse:
+        """Kommt am anderen Ende noch etwas an?
+
+        Getrennt von ``/healthz`` aus demselben Grund wie ``/healthz/quelle``:
+        An ``/healthz`` haengt der Docker-Healthcheck, und der Fall, der hier
+        rot wird — Token falsch, Webhook geloescht — heilt durch einen Neustart
+        gerade **nicht**. Er heilt durch eine Hand an der ``.env``.
+
+        Schlimmer noch: Ein Neustart wuerde es wieder versuchen, und genau
+        dieses Wiederholen ist das, was Discord mit einer IP-Sperre beantwortet
+        (10.000 ungueltige Anfragen in 10 Minuten). Deshalb legt der Spiegel
+        einen Weg bei 401/403/404 endgueltig still und sagt es hier — statt
+        einen Neustartkreis anzuwerfen.
+
+        Ohne konfigurierte Webhooks ist der Endpunkt gruen und meldet ``aus``:
+        Nicht eingeschaltet ist kein Fehler.
+        """
+        stats = discord.stats()
+        ok = not discord.alle_stillgelegt
+        return JSONResponse({"ok": ok, **stats}, status_code=200 if ok else 503)
 
     @app.get("/healthz/quelle")
     async def healthz_quelle() -> JSONResponse:

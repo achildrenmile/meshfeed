@@ -216,16 +216,26 @@ class Store:
     # --- Knoten und Wege -------------------------------------------------
 
     def record_node(self, pubkey: str, name: Optional[str],
-                    mode: Optional[str] = None, seen_at: Optional[int] = None) -> None:
+                    mode: Optional[str] = None, seen_at: Optional[int] = None
+                    ) -> Optional[tuple[str, Optional[str]]]:
         """Einen Knoten aus einem Advert vermerken.
 
         Der Name darf sich aendern, deshalb wird er bei jedem Advert
         ueberschrieben. Ein leerer Name laesst den bisherigen stehen: ein Advert
         ohne Namensfeld soll einen bekannten Namen nicht loeschen.
+
+        Rueckgabe ist der **Uebergang**, falls es einen gab: ``("neu", None)``
+        oder ``("umbenannt", alter_name)``, sonst ``None``. Aufrufer, die das
+        nicht brauchen, ignorieren den Wert. Der Advert-Strom selbst ist mit
+        rund 650 Meldungen am Tag nichts, was man ansehen will — die paar
+        Uebergaenge darin schon.
         """
         pubkey = pubkey.lower()
         now = int(time.time()) if seen_at is None else seen_at
         with self._lock:
+            vorher = self._db.execute(
+                "SELECT name FROM nodes WHERE pubkey = ?", (pubkey,)
+            ).fetchone()
             self._db.execute(
                 """INSERT INTO nodes (pubkey, name, mode, first_seen, last_seen)
                    VALUES (?, ?, ?, ?, ?)
@@ -236,6 +246,15 @@ class Store:
                 (pubkey, name or None, mode or None, now, now),
             )
             self._db.commit()
+
+        if vorher is None:
+            return ("neu", None)
+        alt = vorher["name"]
+        # Nur echte Umbenennungen. Ein Advert ohne Namensfeld loescht nichts und
+        # ist deshalb auch keine Umbenennung.
+        if name and alt and name != alt:
+            return ("umbenannt", alt)
+        return None
 
     def resolve_prefixes(self, prefixes: set[str]) -> dict[str, list[dict[str, Any]]]:
         """Pfad-Praefixe auf bekannte Knoten abbilden.

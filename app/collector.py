@@ -24,6 +24,8 @@ logger = logging.getLogger("meshfeed.collector")
 
 # Callback: (Nachricht, is_new)
 MessageHandler = Callable[[StoredMessage, bool], None]
+# Callback: (Uebergang, Pubkey, Name, alter Name) — "neu" oder "umbenannt"
+NodeHandler = Callable[[str, str, Optional[str], Optional[str]], None]
 
 
 def _as_float(value: object) -> Optional[float]:
@@ -36,10 +38,12 @@ def _as_float(value: object) -> Optional[float]:
 
 class Collector:
     def __init__(self, settings: Settings, store: Store,
-                 on_message: Optional[MessageHandler] = None) -> None:
+                 on_message: Optional[MessageHandler] = None,
+                 on_node: Optional[NodeHandler] = None) -> None:
         self.settings = settings
         self.store = store
         self.on_message = on_message
+        self.on_node = on_node
         self.connected = threading.Event()
         self.packets_seen = 0
         self.messages_decoded = 0
@@ -187,10 +191,14 @@ class Collector:
         if not isinstance(pubkey, str) or len(pubkey) < 8:
             return
         seen = decoded.get("advert_time")
-        self.store.record_node(
+        name = (decoded.get("name") or "").strip() or None
+        uebergang = self.store.record_node(
             pubkey=pubkey,
-            name=(decoded.get("name") or "").strip() or None,
+            name=name,
             mode=decoded.get("mode"),
             seen_at=int(seen) if isinstance(seen, (int, float)) else None,
         )
         self.adverts_seen += 1
+        if uebergang and self.on_node:
+            art, alter_name = uebergang
+            self.on_node(art, pubkey, name, alter_name)
