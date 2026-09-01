@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -22,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from .collector import Collector
 from .config import Settings
 from .discord import DiscordSink
+from .karte import KartenQuelle
 from .store import StoredMessage, Store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -159,10 +161,19 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 text = f"{text}\n-# {' · '.join(teile)}"
         discord.post(message.channel, message.sender, text)
 
+    # Ohne Filter meldet die Karten-Quelle Neuzugaenge aus ganz Oesterreich —
+    # gemessen am 01.09.2026 in gut zwei Minuten sieben Knoten, davon keiner
+    # aus Kaernten. Der eigene Observer hoerte nur die Nachbarschaft, deshalb
+    # fiel das vorher nicht an.
+    knoten_muster = (re.compile(settings.discord_knoten_muster, re.IGNORECASE)
+                     if settings.discord_knoten_muster else None)
+
     def _knoten_an_discord(art: str, pubkey: str, name, alter_name) -> None:
         if not settings.discord_knoten or not discord.aktiv:
             return
         if time.monotonic() < knoten_ab:
+            return
+        if knoten_muster and not knoten_muster.search(name or alter_name or ""):
             return
         angezeigt = name or pubkey[:8]
         if art == "neu":
@@ -175,8 +186,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         broadcaster.publish(message, is_new)
         _an_discord(message, is_new)
 
-    collector = Collector(settings, store, on_message=_weiterreichen,
-                          on_node=_knoten_an_discord)
+    # Welche Quelle laeuft, entscheidet allein die .env. Beide bedienen
+    # dieselbe Flaeche — Zaehler, connected, quiet_seconds —, deshalb aendert
+    # sich unterhalb dieser Zeile nichts.
+    bauen = KartenQuelle if settings.quelle == "http" else Collector
+    collector = bauen(settings, store, on_message=_weiterreichen,
+                      on_node=_knoten_an_discord)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -371,19 +386,25 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         still = collector.quiet_seconds()
         grenze = settings.quelle_still_minuten * 60
         ok = still < grenze
-        return JSONResponse(
-            {
-                "ok": ok,
-                "mqtt": collector.connected.is_set(),
-                "still_seit_s": int(still),
-                "grenze_s": grenze,
-                "letztes_paket": (
-                    int(collector.last_packet_at) if collector.last_packet_at else None
-                ),
-                "pakete_gesamt": collector.messages_received,
-            },
-            status_code=200 if ok else 503,
-        )
+        antwort = {
+            "ok": ok,
+            # Welche Quelle laeuft, gehoert hierher: Wer vor einem stillen
+            # Dienst steht, will nicht erst in der .env nachsehen muessen,
+            # wo er ueberhaupt suchen soll.
+            "quelle": settings.quelle,
+            "verbunden": collector.connected.is_set(),
+            # Alter Name, bleibt fuer alles stehen, was ihn schon abfragt.
+            "mqtt": collector.connected.is_set(),
+            "still_seit_s": int(still),
+            "grenze_s": grenze,
+            "letztes_paket": (
+                int(collector.last_packet_at) if collector.last_packet_at else None
+            ),
+            "pakete_gesamt": collector.messages_received,
+        }
+        if hasattr(collector, "stats"):
+            antwort["karte"] = collector.stats()
+        return JSONResponse(antwort, status_code=200 if ok else 503)
 
     return app
 

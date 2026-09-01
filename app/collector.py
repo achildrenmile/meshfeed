@@ -36,7 +36,20 @@ def _as_float(value: object) -> Optional[float]:
         return None
 
 
-class Collector:
+class Quelle:
+    """Alles, was nicht vom Transportweg abhaengt.
+
+    Die Pakete koennen per MQTT hereinkommen oder von der Karte abgeholt
+    werden — verarbeitet werden sie gleich. Was hier steht, gilt fuer beide
+    Wege: die Zaehler, das Lebenszeichen, das Auspacken eines Pakets und die
+    Knotentabelle.
+
+    Wer eine neue Quelle baut, muss ``start()`` und ``stop()`` mitbringen und
+    fuer jedes hereinkommende Paket ``verarbeite()`` aufrufen. Der Rest kommt
+    von hier, und damit auch die Fassade, auf die ``main.py`` und die
+    Gesundheitsendpunkte zugreifen.
+    """
+
     def __init__(self, settings: Settings, store: Store,
                  on_message: Optional[MessageHandler] = None,
                  on_node: Optional[NodeHandler] = None) -> None:
@@ -50,8 +63,8 @@ class Collector:
         self.adverts_seen = 0
         self.last_error: Optional[str] = None
 
-        # Wann zuletzt ueberhaupt etwas ueber MQTT hereinkam — vor jedem
-        # Filter, unabhaengig von Pakettyp und Kanal.
+        # Wann zuletzt ueberhaupt etwas hereinkam — vor jedem Filter,
+        # unabhaengig von Pakettyp und Kanal.
         #
         # Warum nicht die Zeit der letzten Kanalnachricht: Ein ruhiger Kanal
         # ist normal, auf #kf vergeht auch mal ein Tag. Der Observer dagegen
@@ -63,6 +76,125 @@ class Collector:
         self.started_at = time.time()
         self.last_packet_at: Optional[float] = None
         self.messages_received = 0
+
+    # --- Lebenszyklus, von der jeweiligen Quelle zu fuellen --------------
+
+    def start(self) -> None:  # pragma: no cover - in den Unterklassen
+        raise NotImplementedError
+
+    def stop(self) -> None:  # pragma: no cover - in den Unterklassen
+        raise NotImplementedError
+
+    # --- Gemeinsamer Weg ins Innere --------------------------------------
+
+    def verarbeite(self, payload: bytes | str) -> None:
+        """Ein hereingekommenes Paket buchen und verarbeiten.
+
+        Zuerst der Lebenszeichen-Stempel, dann erst die Verarbeitung: Auch ein
+        Paket, das gleich verworfen wird oder beim Auspacken kracht, beweist,
+        dass die Leitung steht.
+        """
+        self.last_packet_at = time.time()
+        self.messages_received += 1
+        try:
+            self.ingest(payload)
+        except Exception as exc:  # ein kaputtes Paket darf den Ingest nicht killen
+            self.last_error = str(exc)
+            logger.exception("Paket nicht verarbeitbar: %s", exc)
+
+    def quiet_seconds(self, now: Optional[float] = None) -> float:
+        """Sekunden seit dem letzten Paket, ersatzweise seit dem Start."""
+        now = time.time() if now is None else now
+        return now - (self.last_packet_at or self.started_at)
+
+    def ingest(self, payload: bytes | str) -> Optional[StoredMessage]:
+        """Ein Observer-Paket verarbeiten. Rueckgabe nur bei Kanalnachrichten."""
+        data = json.loads(payload) if isinstance(payload, (bytes, str)) else payload
+        if data.get("type") != "PACKET":
+            return None
+
+        decoded = data.get("decoded") or {}
+
+        # Adverts tragen Namen und Public Key der Knoten. Sie laufen ohnehin
+        # ueber dieselbe Verbindung; mitgeschrieben werden sie, damit die
+        # Pfad-Praefixe in den Nachrichten spaeter Namen bekommen.
+        if data.get("packet_type") == "4":
+            self._record_advert(decoded)
+            return None
+
+        if data.get("packet_type") != "5":
+            return None
+
+        raw_hex = data.get("raw")
+        if not raw_hex:
+            return None
+        self.packets_seen += 1
+
+        path = decoded.get("path")
+        if path is None and data.get("path"):
+            path = str(data["path"]).split(",")
+
+        message = decode_group_text(bytes.fromhex(raw_hex), self.settings.channels, path)
+        if message is None:
+            return None  # fremder Kanal, dessen Schluessel wir nicht haben
+
+        self.messages_decoded += 1
+        stored, is_new = self.store.upsert(
+            channel=message.channel.slug,
+            # Klein geschrieben, egal woher das Paket kam: Der Observer liefert
+            # den Hash in Grossbuchstaben, die Karte klein. Ohne die
+            # Angleichung an genau dieser Stelle — der einen, durch die beide
+            # Quellen laufen — stuende dieselbe Nachricht zweimal in der
+            # Datenbank, sobald jemand die Quelle wechselt. Und damit zweimal
+            # in Discord.
+            packet_hash=(data.get("hash") or raw_hex[:32]).lower(),
+            sent_at=message.sent_at,
+            sender=message.sender,
+            text=message.text,
+            hops=len(path) if path else None,
+            snr=_as_float(data.get("SNR")),
+            rssi=_as_float(data.get("RSSI")),
+            observer=data.get("origin"),
+            path=path,
+        )
+        if self.on_message:
+            self.on_message(stored, is_new)
+        return stored
+
+    def _record_advert(self, decoded: dict) -> None:
+        """Knoten aus einem Advert vermerken.
+
+        Der Observer dekodiert Adverts bereits selbst, inklusive Signaturpruefung
+        (``advert_parse_ok``). Ohne dieses Gutzeichen wird nichts uebernommen —
+        ein halb gelesenes Advert soll keinen falschen Namen in die Tabelle
+        schreiben.
+        """
+        if not decoded.get("advert_parse_ok"):
+            return
+        pubkey = decoded.get("public_key")
+        if not isinstance(pubkey, str) or len(pubkey) < 8:
+            return
+        seen = decoded.get("advert_time")
+        name = (decoded.get("name") or "").strip() or None
+        uebergang = self.store.record_node(
+            pubkey=pubkey,
+            name=name,
+            mode=decoded.get("mode"),
+            seen_at=int(seen) if isinstance(seen, (int, float)) else None,
+        )
+        self.adverts_seen += 1
+        if uebergang and self.on_node:
+            art, alter_name = uebergang
+            self.on_node(art, pubkey, name, alter_name)
+
+
+class Collector(Quelle):
+    """Quelle: MQTT-Broker des Observer-Stacks."""
+
+    def __init__(self, settings: Settings, store: Store,
+                 on_message: Optional[MessageHandler] = None,
+                 on_node: Optional[NodeHandler] = None) -> None:
+        super().__init__(settings, store, on_message=on_message, on_node=on_node)
 
         self._client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
@@ -109,96 +241,4 @@ class Collector:
         logger.warning("MQTT getrennt (%s), paho verbindet selbst wieder", reason_code)
 
     def _handle_message(self, client, userdata, msg: mqtt.MQTTMessage) -> None:
-        # Zuerst der Lebenszeichen-Stempel, dann erst die Verarbeitung: Auch
-        # ein Paket, das gleich verworfen wird oder beim Auspacken kracht,
-        # beweist, dass die Leitung steht.
-        self.last_packet_at = time.time()
-        self.messages_received += 1
-        try:
-            self.ingest(msg.payload)
-        except Exception as exc:  # ein kaputtes Paket darf den Ingest nicht killen
-            self.last_error = str(exc)
-            logger.exception("Paket nicht verarbeitbar: %s", exc)
-
-    # --- Zustand der Quelle ---------------------------------------------
-
-    def quiet_seconds(self, now: Optional[float] = None) -> float:
-        """Sekunden seit dem letzten Paket, ersatzweise seit dem Start."""
-        now = time.time() if now is None else now
-        return now - (self.last_packet_at or self.started_at)
-
-    # --- Verarbeitung ---------------------------------------------------
-
-    def ingest(self, payload: bytes | str) -> Optional[StoredMessage]:
-        """Ein Observer-Paket verarbeiten. Rueckgabe nur bei Kanalnachrichten."""
-        data = json.loads(payload)
-        if data.get("type") != "PACKET":
-            return None
-
-        decoded = data.get("decoded") or {}
-
-        # Adverts tragen Namen und Public Key der Knoten. Sie laufen ohnehin
-        # ueber dieselbe Verbindung; mitgeschrieben werden sie, damit die
-        # Pfad-Praefixe in den Nachrichten spaeter Namen bekommen.
-        if data.get("packet_type") == "4":
-            self._record_advert(decoded)
-            return None
-
-        if data.get("packet_type") != "5":
-            return None
-
-        raw_hex = data.get("raw")
-        if not raw_hex:
-            return None
-        self.packets_seen += 1
-
-        path = decoded.get("path")
-        if path is None and data.get("path"):
-            path = str(data["path"]).split(",")
-
-        message = decode_group_text(bytes.fromhex(raw_hex), self.settings.channels, path)
-        if message is None:
-            return None  # fremder Kanal, dessen Schluessel wir nicht haben
-
-        self.messages_decoded += 1
-        stored, is_new = self.store.upsert(
-            channel=message.channel.slug,
-            packet_hash=data.get("hash") or raw_hex[:32],
-            sent_at=message.sent_at,
-            sender=message.sender,
-            text=message.text,
-            hops=len(path) if path else None,
-            snr=_as_float(data.get("SNR")),
-            rssi=_as_float(data.get("RSSI")),
-            observer=data.get("origin"),
-            path=path,
-        )
-        if self.on_message:
-            self.on_message(stored, is_new)
-        return stored
-
-    def _record_advert(self, decoded: dict) -> None:
-        """Knoten aus einem Advert vermerken.
-
-        Der Observer dekodiert Adverts bereits selbst, inklusive Signaturpruefung
-        (``advert_parse_ok``). Ohne dieses Gutzeichen wird nichts uebernommen —
-        ein halb gelesenes Advert soll keinen falschen Namen in die Tabelle
-        schreiben.
-        """
-        if not decoded.get("advert_parse_ok"):
-            return
-        pubkey = decoded.get("public_key")
-        if not isinstance(pubkey, str) or len(pubkey) < 8:
-            return
-        seen = decoded.get("advert_time")
-        name = (decoded.get("name") or "").strip() or None
-        uebergang = self.store.record_node(
-            pubkey=pubkey,
-            name=name,
-            mode=decoded.get("mode"),
-            seen_at=int(seen) if isinstance(seen, (int, float)) else None,
-        )
-        self.adverts_seen += 1
-        if uebergang and self.on_node:
-            art, alter_name = uebergang
-            self.on_node(art, pubkey, name, alter_name)
+        self.verarbeite(msg.payload)

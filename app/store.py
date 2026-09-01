@@ -10,6 +10,7 @@ weitere zaehlt nur noch den Zaehler hoch und verbessert ggf. SNR/RSSI.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -110,7 +111,7 @@ def _row_to_message(row: sqlite3.Row) -> StoredMessage:
 
 
 class Store:
-    """Duenne Schicht ueber SQLite. Ein Lock, weil der MQTT-Thread schreibt,
+    """Duenne Schicht ueber SQLite. Ein Lock, weil der Ingest-Thread schreibt,
     waehrend der Webserver liest."""
 
     def __init__(self, path: str) -> None:
@@ -121,7 +122,19 @@ class Store:
         self._db.execute("PRAGMA synchronous=NORMAL")
         with self._lock:
             self._db.executescript(SCHEMA)
+            # Einmalige Angleichung: Bis September 2026 landete der Hash so in
+            # der Tabelle, wie ihn die Quelle geschrieben hat — der Observer
+            # gross, die Karte klein. Ohne dieses Nachziehen bekaeme beim
+            # Wechsel der Quelle jede Nachricht im Aufbewahrungsfenster eine
+            # zweite Zeile, und der Spiegel wuerde sie erneut posten.
+            angeglichen = self._db.execute(
+                "UPDATE messages SET packet_hash = LOWER(packet_hash) "
+                "WHERE packet_hash <> LOWER(packet_hash)"
+            ).rowcount
             self._db.commit()
+        if angeglichen:
+            logging.getLogger("meshfeed.store").info(
+                "Hashes angeglichen: %d Zeilen klein geschrieben", angeglichen)
 
     def close(self) -> None:
         with self._lock:

@@ -25,6 +25,9 @@ from app.main import create_app  # noqa: E402
 def app(tmp_path):
     """App ohne Lifespan — der Collector wird gebaut, verbindet aber nicht."""
     return create_app(Settings(
+        # Ausdruecklich der MQTT-Weg: diese Datei prueft ihn samt
+        # _handle_message. Die Vorgabe ist inzwischen die Karte.
+        quelle="mqtt",
         mqtt_host="127.0.0.1",
         channels=parse_channels("#kf=Kaernten funkt"),
         db_path=str(tmp_path / "test.db"),

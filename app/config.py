@@ -99,14 +99,35 @@ def parse_channels(channels: str, channel_keys: str = "") -> ChannelSet:
 
 @dataclass
 class Settings:
+    # --- Woher die Pakete kommen ---
+    # "http" holt sie von der Karte: mehrere Observer, dafuer bis zu ein
+    # Abrufintervall Verzoegerung und ein fremder Dienst dazwischen.
+    # "mqtt" nimmt den eigenen Broker: ein Observer, dafuer sofort.
+    # Es gibt keinen Rueckfall — was hier steht, laeuft.
+    quelle: str = "http"
+
     # --- Quelle: MQTT-Broker des Observers ---
-    mqtt_host: str
+    # Leer erlaubt: bei quelle="http" wird kein Broker gebraucht. Ob der Wert
+    # da sein muss, entscheidet from_env.
+    mqtt_host: str = ""
     mqtt_port: int = 1883
     mqtt_user: str = ""
     mqtt_pass: str = ""
     mqtt_tls: bool = False
     mqtt_topics: list[str] = field(default_factory=lambda: ["meshcore/+/+/packets"])
     mqtt_client_id: str = "meshfeed"
+
+    # --- Quelle: Karten-API ---
+    karte_url: str = "https://map.carinthiamesh.com"
+    karte_intervall_s: float = 20.0
+    karte_limit: int = 200
+    # Das Abrufenster beginnt so viele Sekunden vor dem juengsten bisher
+    # gesehenen Paket. Faengt verspaetet einsortierte Pakete; die dabei
+    # doppelt geholten faengt der Dedup.
+    karte_ueberlappung_s: float = 60.0
+    # Deckel gegen die Flut nach einer laengeren Stoerung.
+    karte_max_seiten: int = 5
+    karte_zeitlimit_s: float = 15.0
 
     # --- Anzeige ---
     site_title: str = "Mesh-Feed"
@@ -145,6 +166,11 @@ class Settings:
     discord_funkdaten: bool = True
     # Knotenmeldungen (neuer Knoten, Umbenennung) an das Ziel ``_knoten``.
     discord_knoten: bool = False
+    # Welche Knoten gemeldet werden. Der eigene Observer hoert die Nachbarschaft,
+    # die Karte dagegen **ganz Oesterreich** — ohne Filter stuenden hier
+    # Neuzugaenge aus Graz und dem Burgenland. Gefiltert wird nach dem
+    # Namensschema des Netzes; leer heisst: alles melden.
+    discord_knoten_muster: str = r"^AT-(K|KL|VI|VL|FE|HE|SV|SP|VK|WO)-"
     # Beim ersten Start ist jeder Knoten neu. Ohne Aufwaermfrist setzt es
     # sofort drei Dutzend Meldungen — deshalb wird zu Beginn nur gefuellt.
     discord_warmup_min: int = 30
@@ -168,9 +194,17 @@ class Settings:
             raw = get(key)
             return float(raw) if raw else default
 
+        quelle = (get("QUELLE") or "http").lower()
+        if quelle not in ("http", "mqtt"):
+            raise ValueError(f"QUELLE kennt nur http oder mqtt, nicht {quelle!r}")
+
         host = get("MQTT_HOST")
-        if not host:
-            raise ValueError("MQTT_HOST fehlt")
+        karte_url = get("KARTE_URL") or "https://map.carinthiamesh.com"
+        # Verlangt wird nur, was die gewaehlte Quelle wirklich braucht.
+        if quelle == "mqtt" and not host:
+            raise ValueError("MQTT_HOST fehlt — bei QUELLE=mqtt ist er Pflicht")
+        if quelle == "http" and not karte_url:
+            raise ValueError("KARTE_URL fehlt — bei QUELLE=http ist sie Pflicht")
 
         channels = parse_channels(get("CHANNELS"), get("CHANNEL_KEYS"))
         if not len(channels):
@@ -179,6 +213,13 @@ class Settings:
         topics = _split_list(get("MQTT_TOPICS")) or ["meshcore/+/+/packets"]
 
         return cls(
+            quelle=quelle,
+            karte_url=karte_url,
+            karte_intervall_s=get_float("KARTE_INTERVALL_S", 20.0),
+            karte_limit=get_int("KARTE_LIMIT", 200),
+            karte_ueberlappung_s=get_float("KARTE_UEBERLAPPUNG_S", 60.0),
+            karte_max_seiten=get_int("KARTE_MAX_SEITEN", 5),
+            karte_zeitlimit_s=get_float("KARTE_ZEITLIMIT_S", 15.0),
             mqtt_host=host,
             mqtt_port=get_int("MQTT_PORT", 1883),
             mqtt_user=get("MQTT_USER"),
@@ -214,5 +255,7 @@ class Settings:
             discord_start_still_s=get_float("DISCORD_START_STILL_S", 5.0),
             discord_funkdaten=get_bool("DISCORD_FUNKDATEN", True),
             discord_knoten=get_bool("DISCORD_KNOTEN"),
+            discord_knoten_muster=env.get(
+                "DISCORD_KNOTEN_MUSTER", r"^AT-(K|KL|VI|VL|FE|HE|SV|SP|VK|WO)-"),
             discord_warmup_min=get_int("DISCORD_WARMUP_MIN", 30),
         )

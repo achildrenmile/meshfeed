@@ -191,11 +191,26 @@ def test_theme_rejects_path_traversal():
         assert resolve_theme(bad) == DEFAULT_THEME
 
 
-def test_settings_require_broker_and_channels():
-    with pytest.raises(ValueError):
-        Settings.from_env({"CHANNELS": "#kf"})
+def test_settings_require_channels():
+    # Ohne Kanal gibt es nichts anzuzeigen — das gilt fuer jede Quelle.
     with pytest.raises(ValueError):
         Settings.from_env({"MQTT_HOST": "broker"})
+
+
+def test_jede_quelle_verlangt_nur_ihr_eigenes():
+    # Der Broker ist nur noch Pflicht, wenn auch ueber ihn gelesen wird.
+    with pytest.raises(ValueError):
+        Settings.from_env({"CHANNELS": "#kf", "QUELLE": "mqtt"})
+
+    # Vorgabe ist die Karte, und die braucht keinen Broker.
+    s = Settings.from_env({"CHANNELS": "#kf"})
+    assert s.quelle == "http"
+    assert s.karte_url.startswith("https://")
+
+    # Ein Tippfehler in QUELLE soll auffallen, nicht still auf etwas
+    # zurueckfallen — sonst laeuft der Dienst an der falschen Quelle.
+    with pytest.raises(ValueError):
+        Settings.from_env({"CHANNELS": "#kf", "QUELLE": "brieftaube"})
 
 
 def test_favicon_falls_back_to_logo():
