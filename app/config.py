@@ -171,6 +171,12 @@ class Settings:
     # Neuzugaenge aus Graz und dem Burgenland. Gefiltert wird nach dem
     # Namensschema des Netzes; leer heisst: alles melden.
     discord_knoten_muster: str = r"^AT-(K|KL|VI|VL|FE|HE|SV|SP|VK|WO)-"
+
+    # --- Kanalwacht ---
+    # Zaehlt mit, welche Kanaele im Netz laufen, auch die ohne Schluessel.
+    # Gezaehlt wird immer, gemeldet nur, wenn ein _knoten-Webhook da ist.
+    kanalwacht: bool = True
+    kanalwacht_stunde: int = 8
     # Beim ersten Start ist jeder Knoten neu. Ohne Aufwaermfrist setzt es
     # sofort drei Dutzend Meldungen — deshalb wird zu Beginn nur gefuellt.
     discord_warmup_min: int = 30
@@ -257,5 +263,7 @@ class Settings:
             discord_knoten=get_bool("DISCORD_KNOTEN"),
             discord_knoten_muster=env.get(
                 "DISCORD_KNOTEN_MUSTER", r"^AT-(K|KL|VI|VL|FE|HE|SV|SP|VK|WO)-"),
+            kanalwacht=get_bool("KANALWACHT", True),
+            kanalwacht_stunde=get_int("KANALWACHT_STUNDE", 8),
             discord_warmup_min=get_int("DISCORD_WARMUP_MIN", 30),
         )

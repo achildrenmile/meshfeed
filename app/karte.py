@@ -93,6 +93,18 @@ def als_observer_paket(eintrag: dict) -> Optional[dict]:
     if pfad:
         paket["decoded"]["path"] = pfad
 
+    # Der Kanal-Hash der Karte wird durchgereicht, nicht selbst aus dem
+    # Rohpaket geholt: dessen Position haengt von der Pfadlaenge ab und ist
+    # ohne passenden Schluessel nicht eindeutig. Fuer die Kanalwacht ist der
+    # gemeldete Wert die verlaesslichere Angabe.
+    if str(typ) == "5":
+        try:
+            d = json.loads(eintrag.get("decoded_json") or "{}")
+            if d.get("channelHashHex"):
+                paket["decoded"]["channel_hash"] = d["channelHashHex"]
+        except ValueError:
+            pass
+
     if str(typ) == "4":
         try:
             d = json.loads(eintrag.get("decoded_json") or "{}")

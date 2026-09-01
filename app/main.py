@@ -202,13 +202,38 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         discord.start()
         collector.start()
         purge_task = asyncio.create_task(_purge_loop())
+        wacht_task = asyncio.create_task(_kanalwacht_loop())
         try:
             yield
         finally:
             purge_task.cancel()
+            wacht_task.cancel()
             collector.stop()
             discord.stop()
             store.close()
+
+    async def _kanalwacht_loop() -> None:
+        """Einmal am Tag melden, welche Kanaele gelaufen sind.
+
+        Geprueft wird stuendlich, gemeldet zur eingestellten Stunde — ein
+        Wecker auf die Minute genau waere hier Aufwand ohne Gewinn.
+        """
+        gemeldet_am = None
+        while True:
+            await asyncio.sleep(600)
+            wacht = getattr(collector, "kanalwacht", None)
+            if wacht is None or "_knoten" not in settings.discord_webhooks:
+                continue
+            jetzt = time.localtime()
+            if jetzt.tm_hour != settings.kanalwacht_stunde or gemeldet_am == jetzt.tm_yday:
+                continue
+            bericht = wacht.bericht()
+            gemeldet_am = jetzt.tm_yday
+            if bericht:
+                discord.post("_knoten", "Kanalwacht", bericht)
+                logger.info("Kanalwacht gemeldet: %d benannt, %d unbekannt",
+                            len(wacht.benannt), len(wacht.unbekannt))
+            wacht.tag_abschliessen()
 
     async def _purge_loop() -> None:
         while True:

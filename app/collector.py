@@ -18,6 +18,7 @@ import paho.mqtt.client as mqtt
 
 from .config import Settings
 from .decode import decode_group_text
+from .kanalwacht import Kanalwacht
 from .store import StoredMessage, Store
 
 logger = logging.getLogger("meshfeed.collector")
@@ -77,6 +78,11 @@ class Quelle:
         self.last_packet_at: Optional[float] = None
         self.messages_received = 0
 
+        # Zaehlt mit, welche Kanaele ueberhaupt laufen — auch die, deren
+        # Schluessel wir nicht haben. Kostet nichts, weil ohnehin jedes Paket
+        # durch diese Stelle geht.
+        self.kanalwacht = (Kanalwacht(settings.channels) if settings.kanalwacht else None)
+
     # --- Lebenszyklus, von der jeweiligen Quelle zu fuellen --------------
 
     def start(self) -> None:  # pragma: no cover - in den Unterklassen
@@ -134,7 +140,12 @@ class Quelle:
         if path is None and data.get("path"):
             path = str(data["path"]).split(",")
 
-        message = decode_group_text(bytes.fromhex(raw_hex), self.settings.channels, path)
+        roh = bytes.fromhex(raw_hex)
+        message = decode_group_text(roh, self.settings.channels, path)
+        if self.kanalwacht is not None:
+            self.kanalwacht.zaehle(roh,
+                                   message.channel.name if message else None,
+                                   decoded.get("channel_hash"))
         if message is None:
             return None  # fremder Kanal, dessen Schluessel wir nicht haben
 
