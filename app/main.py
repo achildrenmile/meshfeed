@@ -429,6 +429,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         }
         if hasattr(collector, "stats"):
             antwort["karte"] = collector.stats()
+        # Sonst sieht man von der Kanalwacht bis zur naechsten Tagesmeldung
+        # nichts — und weiss nicht, ob sie ueberhaupt zaehlt.
+        if getattr(collector, "kanalwacht", None) is not None:
+            antwort["kanalwacht"] = collector.kanalwacht.stats()
         return JSONResponse(antwort, status_code=200 if ok else 503)
 
     return app
