@@ -1,0 +1,39 @@
+name: Build and push to GHCR
+
+# Baut nur bei einem bewusst gesetzten Versions-Tag (v*), nicht bei jedem
+# Commit - passend zum Muster im dcsetup-Repo: ein neues Image ist immer
+# ein bewusster, benannter Schritt, kein automatischer Rollout.
+#
+# Image-Name bewusst "meshfeed-discord", nicht "meshfeed": im dcsetup-
+# Cluster (k8s/apps/mesh/kf-feed und k8s/apps/mesh/meshdiscord) laeuft
+# genau dieses Image bereits unter ghcr.io/achildrenmile/meshfeed-discord
+# fuer BEIDE Instanzen (kf-feed und meshdiscord unterscheiden sich nur in
+# den Env-Vars, nicht im Code) - damit bleibt das bestehende Tag gueltig,
+# ohne die k8s-Manifeste anfassen zu muessen.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/achildrenmile/meshfeed-discord:${{ github.ref_name }}
