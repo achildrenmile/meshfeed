@@ -148,3 +148,15 @@ def test_aufwaermfrist_haelt_die_erste_welle_zurueck(tmp_path):
     app.state.collector.ingest(advert)
 
     assert app.state.discord.wege["_knoten"].warteschlange.qsize() == 0
+
+
+def test_leeres_paket_ohne_funkdaten_wird_nicht_gepostet(kette):
+    """Regression 2026-09-10: leerer Discord-"content" wird von Discord mit
+    HTTP 400 abgelehnt. Ein Paket ohne Textnutzlast (z.B. reines ACK/
+    Praesenz-Paket) UND ohne Hops/SNR zum Anhaengen darf deshalb gar nicht
+    erst in die Warteschlange gelangen, statt spaeter beim Senden zu
+    verwerfen."""
+    collector, sink = kette
+    collector.ingest(paket("", hash_="EE55", snr=None))
+
+    assert eingereiht(sink) == []

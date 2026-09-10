@@ -159,6 +159,15 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 teile.append(f"SNR {message.snr:.1f} dB")
             if teile:
                 text = f"{text}\n-# {' · '.join(teile)}"
+        if not text.strip():
+            # Paket ohne Textnutzlast (z.B. reines ACK/Praesenz-Paket) und
+            # ohne Hops/SNR zum Anhaengen: Discord lehnt einen komplett
+            # leeren "content" mit HTTP 400 ab (kein embed/file als
+            # Alternative vorhanden). Fehlerbeweis 2026-09-10: wiederholte
+            # "HTTP 400"-Verwerfungen auf einem reinen Text-Kanal, ohne dass
+            # Namensfilter (VERBOTENE_NAMEN) zugeschlagen haetten - passte
+            # nur zu leerem Content, nicht zu einem verbotenen Anzeigenamen.
+            return
         discord.post(message.channel, message.sender, text)
 
     # Ohne Filter meldet die Karten-Quelle Neuzugaenge aus ganz Oesterreich —
