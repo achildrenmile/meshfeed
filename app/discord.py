@@ -40,7 +40,19 @@ NAME_MAX = 80
 INHALT_MAX = 2000
 # Nach so vielen Fehlversuchen wird eine Nachricht verworfen. Sie ist dann
 # ohnehin Minuten alt, und eine Funkzeile von vorhin will niemand mehr lesen.
-VERSUCHE_MAX = 3
+#
+# 2026-09-10: von 3 auf 6 angehoben. Root Cause der anhaltenden HTTP-400-
+# Serie auf #at-ktn-bot gefunden: kein Bug im eigenen Code, sondern
+# intermittierendes Cloudflare-Bot-Challenge-Verhalten vor discord.com
+# (Antwort ist dann eine generische HTML-Seite "400 Bad Request", KEIN
+# JSON wie bei einer echten Discord-API-Antwort). Derselbe Request
+# gegen denselben Webhook gelang unmittelbar danach 5/5 Mal - rein
+# stochastisch, je nachdem welcher Cloudflare-Edge-Knoten die Anfrage
+# annimmt. 3 Versuche à max. 10s Backoff reichten oft nicht aus, um eine
+# Bad-Luck-Serie zu ueberstehen; 6 Versuche bleiben mit ca. 30s
+# Gesamtdauer weiterhin weit unter dem dokumentierten Rate-Limit
+# (30 Anfragen/60s je Webhook).
+VERSUCHE_MAX = 6
 
 
 def saeubere_namen(name: Optional[str]) -> str:
@@ -228,16 +240,22 @@ class DiscordSink:
                     self._warte_nach_429(fehler)
                     continue
                 weg.letzter_fehler = f"HTTP {fehler.code}"
+                # Root-Cause-Fund 2026-09-10: eine echte Discord-API-Antwort
+                # ist immer JSON. Ein "<html"-Praefix verraet stattdessen ein
+                # Cloudflare-Challenge/Fehlerdokument, das die Anfrage nie bis
+                # zu Discord selbst durchliess - kein Payload-Problem auf
+                # unserer Seite. Nur dieses eine Unterscheidungsmerkmal
+                # mitloggen, keine Nachrichteninhalte (siehe unten).
+                ist_html = False
                 try:
-                    antwort_text = fehler.read().decode("utf-8", errors="replace")[:500]
+                    ist_html = fehler.read(15).lstrip().startswith(b"<")
                 except Exception:
-                    antwort_text = "<Antwort nicht lesbar>"
-                logger.warning(
-                    "Discord %s: HTTP %d (Versuch %d) - Antwort: %s - "
-                    "username=%r inhalt=%r",
-                    weg.slug, fehler.code, versuch, antwort_text,
-                    post.username, post.inhalt,
-                )
+                    pass
+                logger.warning("Discord %s: HTTP %d (Versuch %d)%s", weg.slug,
+                               fehler.code, versuch,
+                               " - Antwort war HTML statt JSON (vermutlich "
+                               "Cloudflare-Challenge vor Discord, kein "
+                               "Payload-Fehler)" if ist_html else "")
             except Exception as fehler:  # Netz weg, DNS, Zeitlimit
                 weg.letzter_fehler = str(fehler)
                 logger.warning("Discord %s: %s (Versuch %d)", weg.slug, fehler, versuch)
