@@ -228,7 +228,16 @@ class DiscordSink:
                     self._warte_nach_429(fehler)
                     continue
                 weg.letzter_fehler = f"HTTP {fehler.code}"
-                logger.warning("Discord %s: HTTP %d (Versuch %d)", weg.slug, fehler.code, versuch)
+                try:
+                    antwort_text = fehler.read().decode("utf-8", errors="replace")[:500]
+                except Exception:
+                    antwort_text = "<Antwort nicht lesbar>"
+                logger.warning(
+                    "Discord %s: HTTP %d (Versuch %d) - Antwort: %s - "
+                    "username=%r inhalt=%r",
+                    weg.slug, fehler.code, versuch, antwort_text,
+                    post.username, post.inhalt,
+                )
             except Exception as fehler:  # Netz weg, DNS, Zeitlimit
                 weg.letzter_fehler = str(fehler)
                 logger.warning("Discord %s: %s (Versuch %d)", weg.slug, fehler, versuch)
